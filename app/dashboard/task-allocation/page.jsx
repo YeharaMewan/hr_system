@@ -4,7 +4,7 @@
 import React from 'react';
 import { useSession } from 'next-auth/react';
 import { redirect } from 'next/navigation';
-import TaskAllocationDashboard from '../components/TaskAllocationDashboard';
+import TaskAllocationDashboard from '../../components/TaskAllocationDashboard';
 
 export default function TaskAllocationPage() {
   const { data: session, status } = useSession();

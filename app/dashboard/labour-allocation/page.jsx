@@ -4,7 +4,7 @@
 import React from 'react';
 import { useSession } from 'next-auth/react';
 import { redirect } from 'next/navigation';
-import LabourAllocationDashboard from '../components/LabourAllocationDashboard';
+import LabourAllocationDashboard from '../../components/LabourAllocationDashboard';
 
 export default function LabourAllocationPage() {
   const { data: session, status } = useSession();

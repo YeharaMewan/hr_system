@@ -10,10 +10,10 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
     const pathname = usePathname();
 
     const navLinks = [
-        { name: 'Attendance', href: '/attendance', icon: LayoutDashboard },
+        { name: 'Attendance', href: '/dashboard/attendance', icon: LayoutDashboard },
         { name: 'Users', href: '/dashboard/users', icon: Users },
-        { name: 'Task Allocation', href: '/task-allocation', icon: ClipboardList },
-        { name: 'Labour Allocation', href: '/labour-allocation', icon: UserCheck },
+        { name: 'Task Allocation', href: '/dashboard/task-allocation', icon: ClipboardList },
+        { name: 'Labour Allocation', href: '/dashboard/labour-allocation', icon: UserCheck },
         { name: 'Settings', href: '/dashboard/settings', icon: Settings },
     ];
 
