@@ -4,14 +4,16 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import Image from 'next/image';
-import { LayoutDashboard, Users, Settings, LogOut, Zap } from 'lucide-react'; // Zap icon එකත් එකතු කරගමු
+import { LayoutDashboard, Users, Settings, LogOut, Zap, ClipboardList, UserCheck } from 'lucide-react'; // නව icons එකතු කරගන්න
 
 const Sidebar = ({ isOpen, toggleSidebar }) => {
     const pathname = usePathname();
 
     const navLinks = [
-        { name: 'Attendance', href: '/dashboard/attendance', icon: LayoutDashboard },
+        { name: 'Attendance', href: '/attendance', icon: LayoutDashboard },
         { name: 'Users', href: '/dashboard/users', icon: Users },
+        { name: 'Task Allocation', href: '/task-allocation', icon: ClipboardList },
+        { name: 'Labour Allocation', href: '/labour-allocation', icon: UserCheck },
         { name: 'Settings', href: '/dashboard/settings', icon: Settings },
     ];
 

@@ -8,7 +8,7 @@ export default withAuth(
     // req.nextauth.token එකේ අපේ role එක තියෙනවා
     if (
       req.nextUrl.pathname.startsWith("/dashboard") &&
-      req.nextauth.token?.role !== "HR"
+      req.nextauth.token?.role !== "hr"
     ) {
       // role එක "HR" නොවේ නම්, login පිටුවට redirect කරන්න
       // 'rewrite' වෙනුවට 'redirect' භාවිතා කිරීම
