@@ -29,18 +29,26 @@ export async function POST(request) {
 
     const userId = session.user.id || session.user._id;
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Set to start of day
+    today.setHours(0, 0, 0, 0);
 
-    // Create or update today's record
+    // ✅ FIX: Proper upsert operation
     const record = await LabourAllocationRecord.findOneAndUpdate(
       { 
-        date: today,
-        createdBy: userId 
+        date: today
+        // ⚠️ Remove createdBy from query - එකම date එකට multiple users create කරන්න පුළුවන්
       },
       {
         companyStats: stats,
         updatedAt: new Date(),
-        updatedBy: userId
+        updatedBy: userId,
+        // ✅ ADD: Set createdBy if creating new record
+        $setOnInsert: {
+          createdBy: userId,
+          date: today,
+          leaderAllocations: [],
+          totalLabourCount: 0,
+          totalLeaders: 0
+        }
       },
       {
         upsert: true,
@@ -51,7 +59,12 @@ export async function POST(request) {
 
     return NextResponse.json({
       message: "Company stats saved successfully",
-      record: record,
+      record: {
+        _id: record._id,
+        date: record.date,
+        companyStats: record.companyStats,
+        updatedAt: record.updatedAt
+      },
       success: true
     });
 
@@ -64,6 +77,7 @@ export async function POST(request) {
   }
 }
 
+// ✅ ADD: Improve GET method as well
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions);
@@ -83,10 +97,13 @@ export async function GET(request) {
     const targetDate = new Date(date);
     targetDate.setHours(0, 0, 0, 0);
 
-    // Get record for the specified date
+    // Get latest record for the date (any user)
     const record = await LabourAllocationRecord.findOne({ 
       date: targetDate 
-    }).populate('createdBy', 'name email').lean();
+    })
+    .sort({ updatedAt: -1 }) // Get most recently updated
+    .populate('createdBy', 'name email')
+    .lean();
 
     if (!record) {
       return NextResponse.json({

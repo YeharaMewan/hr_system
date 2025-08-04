@@ -36,21 +36,31 @@ const LabourAllocationDashboard = () => {
     return statusColors[status] || statusColors.Default;
   };
 
-  // Fetch labour allocation data with attendance status
+  // ✅ FIXED: Fetch labour allocation data with proper attendance status from Attendance model
   const fetchLabourData = async () => {
     try {
       setLoading(true);
+      console.log('🔄 Starting to fetch labour data...');
       
       // Fetch tasks with allocations
       const tasksResponse = await fetch('/api/tasks');
       const tasksData = await tasksResponse.json();
       
-      // Fetch users with today's attendance status
-      const usersResponse = await fetch('/api/users/all');
-      const usersData = await usersResponse.json();
+      // ✅ NEW: Use dedicated API endpoint for leaders with attendance status
+      const leadersResponse = await fetch('/api/labour-allocation/leaders-status');
+      const leadersData = await leadersResponse.json();
       
-      if (tasksData.success && usersData.success) {
-        const leaders = usersData.users.filter(user => user.role === 'leader');
+      console.log('📊 API Responses:', {
+        tasksSuccess: tasksData.success,
+        leadersSuccess: leadersData.success,
+        tasksCount: tasksData.tasks?.length || 0,
+        leadersCount: leadersData.leaders?.length || 0,
+        leadersWithAttendance: leadersData.leaders?.filter(l => l.hasAttendanceRecord)?.length || 0
+      });
+      
+      if (tasksData.success && leadersData.success) {
+        const leaders = leadersData.leaders;
+        console.log('👥 Leaders with attendance found:', leaders.length);
         
         // Calculate labour count for each leader
         const leaderLabourCount = leaders.map(leader => {
@@ -76,32 +86,71 @@ const LabourAllocationDashboard = () => {
             return count;
           }, 0);
           
-          return {
+          const leaderData = {
             id: leader._id,
             name: leader.name,
             email: leader.email,
             labourCount: totalLabours,
             tasksCount: leaderTasks.length,
-            attendanceStatus: leader.status || 'Not Marked' // Today's attendance status
+            // ✅ MAIN FIX: Now getting correct attendance status from dedicated API
+            attendanceStatus: leader.attendanceStatus || 'Not Marked'
           };
+          
+          console.log(`👤 Leader ${leader.name}:`, {
+            labourCount: totalLabours,
+            tasksCount: leaderTasks.length,
+            attendanceStatus: leader.attendanceStatus,
+            hasAttendanceRecord: leader.hasAttendanceRecord,
+            debugInfo: leader.debugInfo
+          });
+          
+          return leaderData;
         });
         
         // Sort කරන්න name අනුව
         leaderLabourCount.sort((a, b) => a.name.localeCompare(b.name));
         
         setLabourData(leaderLabourCount);
+        console.log('✅ Labour data set successfully:', leaderLabourCount.map(l => ({
+          name: l.name,
+          attendanceStatus: l.attendanceStatus,
+          labourCount: l.labourCount
+        })));
+        
       } else {
-        throw new Error(tasksData.message || usersData.message || 'Failed to fetch data');
+        throw new Error(tasksData.message || leadersData.message || 'Failed to fetch data');
       }
     } catch (err) {
-      console.error('Error fetching labour data:', err);
+      console.error('❌ Error fetching labour data:', err);
       setError('Failed to load labour allocation data: ' + err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // Load saved company stats from API instead of localStorage
+  // ✅ ALTERNATIVE: Create a dedicated function to fetch leaders with attendance
+  const fetchLeadersWithAttendance = async () => {
+    try {
+      console.log('🎯 Fetching leaders with attendance status...');
+      
+      // Create dedicated API endpoint call
+      const response = await fetch('/api/labour-allocation/leaders-status');
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log('✅ Leaders with attendance fetched:', data.leaders);
+        return data.leaders;
+      } else {
+        throw new Error(data.message || 'Failed to fetch leaders attendance');
+      }
+    } catch (err) {
+      console.error('❌ Error fetching leaders attendance:', err);
+      // Fallback to original method
+      return null;
+    }
+  };
+
+  // Load saved company stats from API
   const loadCompanyStats = async () => {
     try {
       const response = await fetch('/api/labour-allocation/company-stats');
@@ -134,40 +183,48 @@ const LabourAllocationDashboard = () => {
     }
   };
 
-  // Save company stats to API and localStorage
+  // Enhanced save company stats function
   const saveCompanyStats = async () => {
     setSaving(true);
     try {
-      // Save to API
+      console.log('💾 Saving company stats:', companyStats);
+      
       const response = await fetch('/api/labour-allocation/company-stats', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify({ stats: companyStats })
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setLastSaved(new Date());
-        }
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        console.log('✅ Company stats saved successfully');
+        setLastSaved(new Date());
+      } else {
+        console.error('❌ Failed to save company stats:', data.message);
+        throw new Error(data.message || 'Failed to save to server');
       }
       
-      // Also save to localStorage as backup
-      localStorage.setItem('companyStats', JSON.stringify(companyStats));
-      localStorage.setItem('companyStatsLastSaved', new Date().toISOString());
-      
     } catch (err) {
-      console.error('Error saving company stats:', err);
-      // Fallback to localStorage only
-      localStorage.setItem('companyStats', JSON.stringify(companyStats));
-      localStorage.setItem('companyStatsLastSaved', new Date().toISOString());
-      setLastSaved(new Date());
+      console.error('❌ Error saving company stats:', err);
+      
+      // Fallback to localStorage
+      try {
+        localStorage.setItem('companyStats', JSON.stringify(companyStats));
+        localStorage.setItem('companyStatsLastSaved', new Date().toISOString());
+        setLastSaved(new Date());
+        console.log('💾 Saved to localStorage as fallback');
+      } catch (localError) {
+        console.error('❌ Failed to save to localStorage:', localError);
+      }
     } finally {
       setSaving(false);
     }
   };
 
-  // Save daily labour allocation data with enhanced database saving
+  // Save daily labour allocation data
   const saveDailyData = async () => {
     try {
       const dataToSave = {
@@ -194,18 +251,17 @@ const LabourAllocationDashboard = () => {
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          console.log('Daily data saved successfully:', data);
-          // Update UI to show save status
+          console.log('✅ Daily data saved successfully');
           setLastSaved(new Date());
         } else {
-          console.error('Failed to save daily data:', data.message);
+          console.error('❌ Failed to save daily data:', data.message);
         }
       } else {
-        console.error('HTTP error saving daily data:', response.status);
+        console.error('❌ HTTP error saving daily data:', response.status);
       }
     } catch (err) {
-      console.error('Error saving daily data:', err);
-      // Save to localStorage as fallback
+      console.error('❌ Error saving daily data:', err);
+      // Fallback to localStorage
       try {
         const fallbackData = {
           labourData,
@@ -218,9 +274,9 @@ const LabourAllocationDashboard = () => {
           savedAt: new Date().toISOString()
         };
         localStorage.setItem('dailyLabourAllocation', JSON.stringify(fallbackData));
-        console.log('Data saved to localStorage as fallback');
+        console.log('💾 Data saved to localStorage as fallback');
       } catch (localError) {
-        console.error('Failed to save to localStorage:', localError);
+        console.error('❌ Failed to save to localStorage:', localError);
       }
     }
   };
@@ -232,7 +288,7 @@ const LabourAllocationDashboard = () => {
   const codegenStaffCount = companyStats[0]?.count || 0;
   const theRiseTotalEmployees = totalLabourCount + codegenStaffCount;
 
-  // Calculate total company employees (The rise total + Ram studios + Rise Technology)
+  // Calculate total company employees
   const ramStudiosCount = companyStats[1]?.count || 0;
   const riseTechnologyCount = companyStats[2]?.count || 0;
   const totalCompanyEmployees = theRiseTotalEmployees + ramStudiosCount + riseTechnologyCount;
@@ -259,74 +315,68 @@ const LabourAllocationDashboard = () => {
     loadCompanyStats();
   }, []);
 
-  // Auto-save when company stats change
+  // Auto-save with debounce
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       if (companyStats.some(stat => stat.count > 0)) {
+        console.log('🔄 Auto-saving company stats...');
         saveCompanyStats();
       }
-    }, 2000); // Auto-save 2 seconds after changes
+    }, 2000);
 
     return () => clearTimeout(timeoutId);
   }, [companyStats]);
 
-  // Auto-save daily data when labour data changes
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      if (labourData.length > 0) {
-        saveDailyData();
-      }
-    }, 3000); // Auto-save 3 seconds after labour data changes
-
-    return () => clearTimeout(timeoutId);
-  }, [labourData, companyStats]);
-
-  // Loading state
   if (loading) {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
         <div className="text-center">
-          <Loader className="w-8 h-8 animate-spin mx-auto mb-4 text-violet-500" />
-          <p className="text-zinc-400">Loading Labour Allocation Dashboard...</p>
+          <Loader className="w-8 h-8 text-violet-500 animate-spin mx-auto mb-4" />
+          <p className="text-zinc-400">Loading Labour Allocation Data...</p>
         </div>
       </div>
     );
   }
 
-  // Error state
   if (error) {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <p className="text-red-400 mb-4">{error}</p>
+        <div className="text-center p-8">
+          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-white mb-2">Error Loading Data</h2>
+          <p className="text-zinc-400 mb-6">{error}</p>
           <button
-            onClick={fetchLabourData}
-            className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg transition-colors"
+            onClick={() => {
+              setError(null);
+              fetchLabourData();
+            }}
+            className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2 rounded-lg transition-colors"
           >
-            Retry
+            Try Again
           </button>
         </div>
       </div>
     );
   }
 
-  // Main render
   return (
-    <div className="bg-zinc-950 text-white min-h-screen">
+    <div className="min-h-screen bg-zinc-950 text-white">
       <div className="max-w-7xl mx-auto p-6">
+        
         {/* Header */}
         <div className="mb-8">
-          <div className="flex justify-between items-start">
+          <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-white mb-2">Labour Allocation Dashboard</h1>
-              <p className="text-zinc-400">කම්කරු පවරාගැනීම් සහ සමාගම් සංඛ්‍යාලේඛන</p>
+              <h1 className="text-3xl font-bold mb-2">Labour Allocation Dashboard</h1>
+              <p className="text-zinc-400">Track labour distribution across projects and leaders</p>
             </div>
-            <div className="text-right">
+            <div className="flex items-center gap-4">
               <button
-                onClick={saveCompanyStats}
+                onClick={saveDailyData}
+                className={`flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg transition-colors ${
+                  saving ? 'opacity-75' : ''
+                }`}
                 disabled={saving}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white px-4 py-2 rounded-lg transition-colors mb-2"
               >
                 <Save className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />
                 {saving ? 'Saving...' : 'Save Data'}
@@ -432,6 +482,7 @@ const LabourAllocationDashboard = () => {
                                 <div className="font-medium text-white">{leader.name}</div>
                                 <div className="text-xs text-zinc-400">{leader.email}</div>
                               </div>
+                              {/* ✅ FIXED: නිවැරදි attendance status display with proper debugging */}
                               <div className={`px-2 py-1 rounded-full text-xs font-medium border ${getAttendanceStatusClass(leader.attendanceStatus)}`}>
                                 {leader.attendanceStatus}
                               </div>
@@ -489,7 +540,7 @@ const LabourAllocationDashboard = () => {
                         COMPANY/DEPARTMENT
                       </th>
                       <th className="text-right py-3 px-4 font-medium text-zinc-300 bg-blue-600">
-                        EMPLOYEES
+                        COUNT
                       </th>
                       <th className="text-center py-3 px-4 font-medium text-zinc-300 bg-blue-600">
                         ACTION
@@ -497,40 +548,24 @@ const LabourAllocationDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {/* First row - Total Labour Count from left table */}
-                    <tr className="border-b border-zinc-700/50 bg-violet-900/20">
-                      <td className="py-3 px-4 font-medium text-violet-400">
-                        Total Labour Count
-                      </td>
-                      <td className="text-right py-3 px-4 font-bold text-lg text-violet-400">
-                        {totalLabourCount}
-                      </td>
-                      <td className="text-center py-3 px-4">
-                        <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">
-                          Auto
-                        </span>
-                      </td>
-                    </tr>
-
-                    {/* Company Stats - First row: Codegen + Aigrow staff's */}
+                    {/* First row - Codegen + Aigrow staff's (editable) */}
                     <tr className="border-b border-zinc-700/50 hover:bg-zinc-800/50 transition-colors">
                       <td className="py-3 px-4">
-                        <div className="font-medium text-white">{companyStats[0].name}</div>
+                        <div className="font-medium text-white">{companyStats[0]?.name}</div>
                       </td>
                       <td className="text-right py-3 px-4">
                         {editingStats[0] ? (
                           <input
                             type="number"
-                            value={companyStats[0].count}
+                            value={companyStats[0]?.count || 0}
                             onChange={(e) => updateCompanyStat(0, e.target.value)}
-                            onBlur={() => handleSaveStat(0)}
-                            onKeyPress={(e) => e.key === 'Enter' && handleSaveStat(0)}
-                            className="w-20 bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-right text-white focus:outline-none focus:border-blue-500"
+                            className="w-20 px-2 py-1 bg-zinc-800 border border-zinc-600 rounded text-white text-right"
+                            min="0"
                             autoFocus
                           />
                         ) : (
                           <div className="font-bold text-lg text-white">
-                            {companyStats[0].count}
+                            {companyStats[0]?.count || 0}
                           </div>
                         )}
                       </td>
@@ -572,7 +607,7 @@ const LabourAllocationDashboard = () => {
 
                     {/* Remaining Company Stats - Ram studios & Rise Technology */}
                     {companyStats.slice(1).map((stat, index) => {
-                      const actualIndex = index + 1; // +1 because we're slicing from index 1
+                      const actualIndex = index + 1;
                       return (
                         <tr 
                           key={actualIndex} 
@@ -585,16 +620,15 @@ const LabourAllocationDashboard = () => {
                             {editingStats[actualIndex] ? (
                               <input
                                 type="number"
-                                value={stat.count}
+                                value={stat.count || 0}
                                 onChange={(e) => updateCompanyStat(actualIndex, e.target.value)}
-                                onBlur={() => handleSaveStat(actualIndex)}
-                                onKeyPress={(e) => e.key === 'Enter' && handleSaveStat(actualIndex)}
-                                className="w-20 bg-zinc-800 border border-zinc-600 rounded px-2 py-1 text-right text-white focus:outline-none focus:border-blue-500"
+                                className="w-20 px-2 py-1 bg-zinc-800 border border-zinc-600 rounded text-white text-right"
+                                min="0"
                                 autoFocus
                               />
                             ) : (
                               <div className="font-bold text-lg text-white">
-                                {stat.count}
+                                {stat.count || 0}
                               </div>
                             )}
                           </td>
@@ -639,13 +673,13 @@ const LabourAllocationDashboard = () => {
                 </table>
               </div>
 
-              {/* Attendance Legend */}
+              {/* Enhanced Attendance Legend with Debug Info */}
               <div className="mt-6 p-4 bg-zinc-800 rounded-lg">
                 <h3 className="text-sm font-semibold text-zinc-300 mb-3 flex items-center">
                   <Calendar className="w-4 h-4 mr-2" />
                   Attendance Legend
                 </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-4">
                   {Object.entries(statusColors).slice(0, 8).map(([status, colorClass]) => (
                     <div key={status} className="flex items-center gap-2">
                       <div className={`w-3 h-3 rounded-full border ${colorClass}`}></div>
@@ -653,6 +687,24 @@ const LabourAllocationDashboard = () => {
                     </div>
                   ))}
                 </div>
+                
+                {/* Debug Info (only show in development) */}
+                {process.env.NODE_ENV === 'development' && (
+                  <div className="mt-4 p-3 bg-zinc-900 rounded border border-zinc-700">
+                    <h4 className="text-xs font-semibold text-yellow-400 mb-2">🐛 Debug Info</h4>
+                    <div className="text-xs text-zinc-400 space-y-1">
+                      <div>Leaders loaded: {labourData.length}</div>
+                      <div>Attendance statuses:</div>
+                      <ul className="ml-4 space-y-1">
+                        {labourData.map(leader => (
+                          <li key={leader.id}>
+                            {leader.name}: <span className="text-yellow-300">{leader.attendanceStatus}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

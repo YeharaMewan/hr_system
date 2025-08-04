@@ -203,7 +203,7 @@ const TaskAllocationDashboard = () => {
       <div className="max-w-7xl mx-auto p-6">
         {/* Header Section */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Task Allocation Dashboard</h1>
+          <h1 className="text-3xl font-bold text-white mb-2">Task Allocation</h1>
           <p className="text-zinc-400">කාර්ය වෙන්කිරීම් සහ කම්කරු පවරාගැනීම</p>
         </div>
 
