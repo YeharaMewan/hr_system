@@ -36,45 +36,32 @@ const LabourAllocationDashboard = () => {
     return statusColors[status] || statusColors.Default;
   };
 
-  // ✅ FIXED: Fetch labour allocation data with proper attendance status from Attendance model
+  // ✅ CLEAN: Fetch labour allocation data without console logs
   const fetchLabourData = async () => {
     try {
       setLoading(true);
-      console.log('🔄 Starting to fetch labour data...');
       
       // Fetch tasks with allocations
       const tasksResponse = await fetch('/api/tasks');
       const tasksData = await tasksResponse.json();
       
-      // ✅ NEW: Use dedicated API endpoint for leaders with attendance status
+      // Use dedicated API endpoint for leaders with attendance status
       const leadersResponse = await fetch('/api/labour-allocation/leaders-status');
       const leadersData = await leadersResponse.json();
       
-      console.log('📊 API Responses:', {
-        tasksSuccess: tasksData.success,
-        leadersSuccess: leadersData.success,
-        tasksCount: tasksData.tasks?.length || 0,
-        leadersCount: leadersData.leaders?.length || 0,
-        leadersWithAttendance: leadersData.leaders?.filter(l => l.hasAttendanceRecord)?.length || 0
-      });
-      
       if (tasksData.success && leadersData.success) {
         const leaders = leadersData.leaders;
-        console.log('👥 Leaders with attendance found:', leaders.length);
         
         // Calculate labour count for each leader
         const leaderLabourCount = leaders.map(leader => {
           // Tasks API response structure අනුව leader matching කරන්න
           const leaderTasks = tasksData.tasks.filter(task => {
-            // assignedLeader field එක තියේ නම් ඒකේ _id check කරන්න
             if (task.assignedLeader && task.assignedLeader._id) {
               return task.assignedLeader._id === leader._id;
             }
-            // leader field එක තියේ නම් ඒකට check කරන්න
             if (task.leader && task.leader._id) {
               return task.leader._id === leader._id;
             }
-            // String ID compare කරන්න
             return task.assignedLeader === leader._id || task.leader === leader._id;
           });
           
@@ -86,36 +73,20 @@ const LabourAllocationDashboard = () => {
             return count;
           }, 0);
           
-          const leaderData = {
+          return {
             id: leader._id,
             name: leader.name,
             email: leader.email,
             labourCount: totalLabours,
             tasksCount: leaderTasks.length,
-            // ✅ MAIN FIX: Now getting correct attendance status from dedicated API
             attendanceStatus: leader.attendanceStatus || 'Not Marked'
           };
-          
-          console.log(`👤 Leader ${leader.name}:`, {
-            labourCount: totalLabours,
-            tasksCount: leaderTasks.length,
-            attendanceStatus: leader.attendanceStatus,
-            hasAttendanceRecord: leader.hasAttendanceRecord,
-            debugInfo: leader.debugInfo
-          });
-          
-          return leaderData;
         });
         
         // Sort කරන්න name අනුව
         leaderLabourCount.sort((a, b) => a.name.localeCompare(b.name));
         
         setLabourData(leaderLabourCount);
-        console.log('✅ Labour data set successfully:', leaderLabourCount.map(l => ({
-          name: l.name,
-          attendanceStatus: l.attendanceStatus,
-          labourCount: l.labourCount
-        })));
         
       } else {
         throw new Error(tasksData.message || leadersData.message || 'Failed to fetch data');
@@ -183,12 +154,10 @@ const LabourAllocationDashboard = () => {
     }
   };
 
-  // Enhanced save company stats function
+  // ✅ CLEAN: Enhanced save company stats function
   const saveCompanyStats = async () => {
     setSaving(true);
     try {
-      console.log('💾 Saving company stats:', companyStats);
-      
       const response = await fetch('/api/labour-allocation/company-stats', {
         method: 'POST',
         headers: { 
@@ -200,24 +169,21 @@ const LabourAllocationDashboard = () => {
       const data = await response.json();
       
       if (response.ok && data.success) {
-        console.log('✅ Company stats saved successfully');
         setLastSaved(new Date());
       } else {
-        console.error('❌ Failed to save company stats:', data.message);
         throw new Error(data.message || 'Failed to save to server');
       }
       
     } catch (err) {
-      console.error('❌ Error saving company stats:', err);
+      console.error('Error saving company stats:', err);
       
       // Fallback to localStorage
       try {
         localStorage.setItem('companyStats', JSON.stringify(companyStats));
         localStorage.setItem('companyStatsLastSaved', new Date().toISOString());
         setLastSaved(new Date());
-        console.log('💾 Saved to localStorage as fallback');
       } catch (localError) {
-        console.error('❌ Failed to save to localStorage:', localError);
+        console.error('Failed to save to localStorage:', localError);
       }
     } finally {
       setSaving(false);
@@ -251,16 +217,11 @@ const LabourAllocationDashboard = () => {
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          console.log('✅ Daily data saved successfully');
           setLastSaved(new Date());
-        } else {
-          console.error('❌ Failed to save daily data:', data.message);
         }
-      } else {
-        console.error('❌ HTTP error saving daily data:', response.status);
       }
     } catch (err) {
-      console.error('❌ Error saving daily data:', err);
+      console.error('Error saving daily data:', err);
       // Fallback to localStorage
       try {
         const fallbackData = {
@@ -274,9 +235,8 @@ const LabourAllocationDashboard = () => {
           savedAt: new Date().toISOString()
         };
         localStorage.setItem('dailyLabourAllocation', JSON.stringify(fallbackData));
-        console.log('💾 Data saved to localStorage as fallback');
       } catch (localError) {
-        console.error('❌ Failed to save to localStorage:', localError);
+        console.error('Failed to save to localStorage:', localError);
       }
     }
   };
@@ -284,9 +244,19 @@ const LabourAllocationDashboard = () => {
   // Calculate total labour count
   const totalLabourCount = labourData.reduce((total, leader) => total + leader.labourCount, 0);
 
+  // ✅ NEW: Calculate working leader count based on attendance status
+  const calculateWorkingLeaderCount = () => {
+    const workingStatuses = ['Present', 'Work from home', 'Work from out of Rise'];
+    return labourData.filter(leader => 
+      workingStatuses.includes(leader.attendanceStatus)
+    ).length;
+  };
+
+  const workingLeaderCount = calculateWorkingLeaderCount();
+
   // Calculate "The rise total employees" automatically
   const codegenStaffCount = companyStats[0]?.count || 0;
-  const theRiseTotalEmployees = totalLabourCount + codegenStaffCount;
+  const theRiseTotalEmployees = totalLabourCount + codegenStaffCount + workingLeaderCount;
 
   // Calculate total company employees
   const ramStudiosCount = companyStats[1]?.count || 0;
@@ -319,7 +289,6 @@ const LabourAllocationDashboard = () => {
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       if (companyStats.some(stat => stat.count > 0)) {
-        console.log('🔄 Auto-saving company stats...');
         saveCompanyStats();
       }
     }, 2000);
@@ -548,7 +517,37 @@ const LabourAllocationDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {/* First row - Codegen + Aigrow staff's (editable) */}
+                    {/* First row - TOTAL LABOUR COUNT */}
+                    <tr className="border-b border-zinc-700/50 bg-violet-900/20">
+                      <td className="py-3 px-4 font-medium text-violet-400">
+                        TOTAL LABOUR COUNT
+                      </td>
+                      <td className="text-right py-3 px-4 font-bold text-lg text-violet-400">
+                        {totalLabourCount}
+                      </td>
+                      <td className="text-center py-3 px-4">
+                        <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">
+                          Auto
+                        </span>
+                      </td>
+                    </tr>
+
+                    {/* ✅ NEW: Second row - WORKING LEADERS COUNT */}
+                    <tr className="border-b border-zinc-700/50 bg-orange-900/20">
+                      <td className="py-3 px-4 font-medium text-orange-400">
+                        WORKING LEADERS COUNT
+                      </td>
+                      <td className="text-right py-3 px-4 font-bold text-lg text-orange-400">
+                        {workingLeaderCount}
+                      </td>
+                      <td className="text-center py-3 px-4">
+                        <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded">
+                          Auto
+                        </span>
+                      </td>
+                    </tr>
+
+                    {/* Third row - Codegen + Aigrow staff's (editable) */}
                     <tr className="border-b border-zinc-700/50 hover:bg-zinc-800/50 transition-colors">
                       <td className="py-3 px-4">
                         <div className="font-medium text-white">{companyStats[0]?.name}</div>
@@ -590,7 +589,7 @@ const LabourAllocationDashboard = () => {
                       </td>
                     </tr>
 
-                    {/* Auto-calculated "The rise total employees" - Second row */}
+                    {/* Auto-calculated "The rise total employees" - Fourth row */}
                     <tr className="border-b border-zinc-700/50 bg-green-900/20">
                       <td className="py-3 px-4 font-medium text-green-400">
                         The rise total employees
@@ -673,39 +672,7 @@ const LabourAllocationDashboard = () => {
                 </table>
               </div>
 
-              {/* Enhanced Attendance Legend with Debug Info */}
-              <div className="mt-6 p-4 bg-zinc-800 rounded-lg">
-                <h3 className="text-sm font-semibold text-zinc-300 mb-3 flex items-center">
-                  <Calendar className="w-4 h-4 mr-2" />
-                  Attendance Legend
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-4">
-                  {Object.entries(statusColors).slice(0, 8).map(([status, colorClass]) => (
-                    <div key={status} className="flex items-center gap-2">
-                      <div className={`w-3 h-3 rounded-full border ${colorClass}`}></div>
-                      <span className="text-zinc-300 text-sm">{status}</span>
-                    </div>
-                  ))}
-                </div>
-                
-                {/* Debug Info (only show in development) */}
-                {process.env.NODE_ENV === 'development' && (
-                  <div className="mt-4 p-3 bg-zinc-900 rounded border border-zinc-700">
-                    <h4 className="text-xs font-semibold text-yellow-400 mb-2">🐛 Debug Info</h4>
-                    <div className="text-xs text-zinc-400 space-y-1">
-                      <div>Leaders loaded: {labourData.length}</div>
-                      <div>Attendance statuses:</div>
-                      <ul className="ml-4 space-y-1">
-                        {labourData.map(leader => (
-                          <li key={leader.id}>
-                            {leader.name}: <span className="text-yellow-300">{leader.attendanceStatus}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                )}
-              </div>
+
             </div>
           </div>
         </div>
