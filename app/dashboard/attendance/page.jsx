@@ -270,7 +270,8 @@ function SelectUserModal({ onClose, onAdd, currentStaffIds }) {
         const fetchUsers = async () => {
             setIsLoading(true);
             try {
-                const res = await fetch('/api/users');
+                // ⭐ වෙනස්කම: Leaders පමණක් fetch කරන API route එක භාවිතා කරන්න
+                const res = await fetch('/api/users/leaders');
                 const { data } = await res.json();
                 const availableUsers = data.filter(user => !currentStaffIds.includes(user._id));
                 setAllUsers(availableUsers);
@@ -278,7 +279,7 @@ function SelectUserModal({ onClose, onAdd, currentStaffIds }) {
                     setSelectedUserId(availableUsers[0]._id);
                 }
             } catch (error) {
-                console.error("Failed to fetch users", error);
+                console.error("Failed to fetch leaders", error);
             }
             setIsLoading(false);
         };
@@ -296,15 +297,15 @@ function SelectUserModal({ onClose, onAdd, currentStaffIds }) {
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
             <motion.form onSubmit={handleSubmit} variants={modalVariants} initial="hidden" animate="visible" exit="exit" className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-full max-w-sm p-6">
                 <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-lg font-bold text-white">Add Employee to Sheet</h3>
+                    <h3 className="text-lg font-bold text-white">Add Leader to Attendance Sheet</h3>
                     <button type="button" onClick={onClose} className="text-zinc-400 hover:text-white"><X size={20} /></button>
                 </div>
                 {isLoading ? (
-                    <p>Loading users...</p>
+                    <p>Loading leaders...</p>
                 ) : allUsers.length > 0 ? (
                     <div className="space-y-4">
                         <div>
-                            <label htmlFor="user-select" className="block text-sm font-medium text-zinc-400 mb-2">Select an Employee</label>
+                            <label htmlFor="user-select" className="block text-sm font-medium text-zinc-400 mb-2">Select a Leader</label>
                             <select 
                                 id="user-select"
                                 value={selectedUserId}
@@ -312,7 +313,7 @@ function SelectUserModal({ onClose, onAdd, currentStaffIds }) {
                                 className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white"
                             >
                                 {allUsers.map(user => (
-                                    <option key={user._id} value={user._id}>{user.name}</option>
+                                    <option key={user._id} value={user._id}>{user.name} (Leader)</option>
                                 ))}
                             </select>
                         </div>
@@ -322,7 +323,7 @@ function SelectUserModal({ onClose, onAdd, currentStaffIds }) {
                         </div>
                     </div>
                 ) : (
-                    <p className="text-zinc-400">All users are already on the attendance sheet.</p>
+                    <p className="text-zinc-400">All leaders are already on the attendance sheet.</p>
                 )}
             </motion.form>
         </div>
