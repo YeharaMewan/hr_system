@@ -13,7 +13,8 @@ import {
   Loader, 
   AlertCircle,
   Clock,
-  CheckCircle2
+  CheckCircle2,
+  Save
 } from 'lucide-react';
 
 // Import task-related components
@@ -32,6 +33,8 @@ const TaskAllocationDashboard = () => {
   const [editingTask, setEditingTask] = useState(null);
   const [currentTaskId, setCurrentTaskId] = useState(null);
   const [currentTaskTitle, setCurrentTaskTitle] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState(null);
 
   // Load all data
   const loadAllData = async () => {
@@ -147,6 +150,54 @@ const TaskAllocationDashboard = () => {
     }
   };
 
+  // Save daily task allocation data
+  const saveDailyData = async () => {
+    try {
+      setSaving(true);
+      
+      const dataToSave = {
+        tasks: tasks,
+        users: users,
+        summary: {
+          totalTasks: tasks.length,
+          totalAllocatedLabours: tasks.reduce((total, task) => 
+            total + (task.allocations ? task.allocations.length : 0), 0
+          ),
+          tasksByStatus: {
+            pending: tasks.filter(task => task.status === 'Pending').length,
+            inProgress: tasks.filter(task => task.status === 'In Progress').length,
+            completed: tasks.filter(task => task.status === 'Completed').length,
+            onHold: tasks.filter(task => task.status === 'On Hold').length
+          },
+          activeLeaders: users.filter(user => user.role === 'leader').length,
+          availableLabours: users.filter(user => user.role === 'labour').length
+        },
+        date: new Date().toISOString()
+      };
+
+      const response = await fetch('/api/task-allocations/daily', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dataToSave)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setLastSaved(new Date());
+          alert('Daily task allocation data saved successfully!');
+        }
+      } else {
+        throw new Error('Failed to save daily data');
+      }
+    } catch (err) {
+      console.error('Error saving daily data:', err);
+      alert('Failed to save daily data: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Get status badge styling
   const getStatusStyle = (status) => {
     switch (status) {
@@ -203,8 +254,29 @@ const TaskAllocationDashboard = () => {
       <div className="max-w-7xl mx-auto p-6">
         {/* Header Section */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Task Allocation</h1>
-          <p className="text-zinc-400">කාර්ය වෙන්කිරීම් සහ කම්කරු පවරාගැනීම</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-white mb-2">Task Allocation</h1>
+              <p className="text-zinc-400">කාර්ය වෙන්කිරීම් සහ කම්කරු පවරාගැනීම</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={saveDailyData}
+                className={`flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors ${
+                  saving ? 'opacity-75' : ''
+                }`}
+                disabled={saving}
+              >
+                <Save className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />
+                {saving ? 'Saving...' : 'Save Today\'s Data'}
+              </button>
+              {lastSaved && (
+                <p className="text-xs text-zinc-500">
+                  Last saved: {lastSaved.toLocaleTimeString()}
+                </p>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Stats Cards */}

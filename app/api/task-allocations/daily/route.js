@@ -1,11 +1,11 @@
-// app/api/labour-allocation/daily/route.js
+// app/api/task-allocations/daily/route.js
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import connectMongoDB from "@/lib/mongodb";
-import LabourAllocationRecord from "@/models/LabourAllocationRecord";
+import TaskAllocationRecord from "@/models/TaskAllocationRecord";
 
-// Save daily labour allocation data
+// Save daily task allocation data
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions);
@@ -17,11 +17,11 @@ export async function POST(request) {
       );
     }
 
-    const { labourData, companyStats, calculatedValues, date, attendanceData } = await request.json();
+    const { tasks, users, summary, date } = await request.json();
 
-    if (!labourData || !Array.isArray(labourData)) {
+    if (!tasks || !Array.isArray(tasks)) {
       return NextResponse.json(
-        { message: "Invalid labour data" },
+        { message: "Invalid task data" },
         { status: 400 }
       );
     }
@@ -32,51 +32,56 @@ export async function POST(request) {
     const targetDate = date ? new Date(date) : new Date();
     targetDate.setHours(0, 0, 0, 0);
 
-    // Get attendance data for the specific date if not provided
-    let finalAttendanceData = attendanceData;
-    if (!attendanceData) {
-      try {
-        const attendanceResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/attendance/daily?date=${targetDate.toISOString().split('T')[0]}`);
-        const attendanceResult = await attendanceResponse.json();
-        if (attendanceResult.success) {
-          finalAttendanceData = attendanceResult.leaders;
-        }
-      } catch (err) {
-        console.log('Could not fetch attendance data, using provided data');
-      }
-    }
+    // Extract leaders and labours from users
+    const leaders = users ? users.filter(user => user.role === 'leader') : [];
+    const labours = users ? users.filter(user => user.role === 'labour') : [];
 
-    // Create comprehensive record with attendance status
+    // Create comprehensive task allocation record
     const recordData = {
-      leaderAllocations: labourData.map(leader => {
-        // Find attendance status for this leader
-        const attendanceRecord = finalAttendanceData 
-          ? finalAttendanceData.find(att => att._id?.toString() === leader.id?.toString() || att.userId?.toString() === leader.id?.toString())
-          : null;
-          
-        return {
-          leaderId: leader.id,
-          leaderName: leader.name,
-          labourCount: leader.labourCount,
-          tasksCount: leader.tasksCount,
-          attendanceStatus: attendanceRecord ? attendanceRecord.attendanceStatus : (leader.attendanceStatus || 'Not Marked')
-        };
-      }),
-      companyStats: companyStats || [
-        { name: 'Codegen + Aigrow staff\'s', count: 0, editable: true },
-        { name: 'Ram studios', count: 0, editable: true },
-        { name: 'Rise Technology', count: 0, editable: true }
-      ],
-      // Add calculated values for historical tracking
-      calculatedValues: calculatedValues || {},
-      totalLabourCount: labourData.reduce((total, leader) => total + leader.labourCount, 0),
-      totalLeaders: labourData.length,
+      taskAllocations: tasks.map(task => ({
+        taskId: task._id,
+        taskTitle: task.title,
+        taskDescription: task.description,
+        status: task.status,
+        location: task.location,
+        expectedManDays: task.expectedManDays || 1,
+        assignedLeader: task.assignedLeader ? {
+          leaderId: task.assignedLeader._id || task.assignedLeader,
+          leaderName: task.assignedLeader.name,
+          leaderEmail: task.assignedLeader.email
+        } : null,
+        allocatedLabours: task.allocations ? task.allocations.map(allocation => ({
+          allocationId: allocation._id,
+          labourId: allocation.labour._id || allocation.labour,
+          labourName: allocation.labour.name,
+          labourEmail: allocation.labour.email,
+          skills: allocation.labour.skills || []
+        })) : [],
+        labourCount: task.allocations ? task.allocations.length : 0
+      })),
+      
+      // Calculate summary statistics
+      summary: {
+        totalTasks: tasks.length,
+        totalAllocatedLabours: tasks.reduce((total, task) => 
+          total + (task.allocations ? task.allocations.length : 0), 0
+        ),
+        tasksByStatus: {
+          pending: tasks.filter(task => task.status === 'Pending').length,
+          inProgress: tasks.filter(task => task.status === 'In Progress').length,
+          completed: tasks.filter(task => task.status === 'Completed').length,
+          onHold: tasks.filter(task => task.status === 'On Hold').length
+        },
+        activeLeaders: leaders.length,
+        availableLabours: labours.length
+      },
+
       updatedAt: new Date(),
       updatedBy: userId
     };
 
     // Create or update the record
-    const record = await LabourAllocationRecord.findOneAndUpdate(
+    const record = await TaskAllocationRecord.findOneAndUpdate(
       { 
         date: targetDate,
         createdBy: userId 
@@ -90,20 +95,19 @@ export async function POST(request) {
     );
 
     return NextResponse.json({
-      message: "Daily labour allocation saved successfully",
+      message: "Daily task allocation saved successfully",
       record: {
         _id: record._id,
         date: record.date,
-        totalLabourCount: record.totalLabourCount,
-        totalLeaders: record.totalLeaders,
-        calculatedValues: record.calculatedValues,
+        summary: record.summary,
+        metrics: record.metrics,
         updatedAt: record.updatedAt
       },
       success: true
     });
 
   } catch (error) {
-    console.error("Error saving daily labour allocation:", error);
+    console.error("Error saving daily task allocation:", error);
     return NextResponse.json(
       { message: "Server error occurred", error: error.message },
       { status: 500 }
@@ -111,7 +115,7 @@ export async function POST(request) {
   }
 }
 
-// Get daily labour allocation data
+// Get daily task allocation data
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions);
@@ -135,12 +139,14 @@ export async function GET(request) {
       const targetDate = new Date();
       targetDate.setHours(0, 0, 0, 0);
 
-      const record = await LabourAllocationRecord.findOne({ 
+      const record = await TaskAllocationRecord.findOne({ 
         date: targetDate 
       })
       .populate('createdBy', 'name email')
       .populate('updatedBy', 'name email')
-      .populate('leaderAllocations.leaderId', 'name email')
+      .populate('taskAllocations.taskId')
+      .populate('taskAllocations.assignedLeader.leaderId', 'name email')
+      .populate('taskAllocations.allocatedLabours.labourId', 'name email skills')
       .lean();
 
       return NextResponse.json({
@@ -159,14 +165,14 @@ export async function GET(request) {
       }
 
       const [records, total] = await Promise.all([
-        LabourAllocationRecord.find(query)
+        TaskAllocationRecord.find(query)
           .populate('createdBy', 'name email')
           .populate('updatedBy', 'name email')
           .sort({ date: -1 })
           .skip(skip)
           .limit(limit)
           .lean(),
-        LabourAllocationRecord.countDocuments(query)
+        TaskAllocationRecord.countDocuments(query)
       ]);
 
       return NextResponse.json({
@@ -182,7 +188,7 @@ export async function GET(request) {
     }
 
   } catch (error) {
-    console.error("Error fetching daily labour allocation:", error);
+    console.error("Error fetching daily task allocation:", error);
     return NextResponse.json(
       { message: "Server error occurred", error: error.message },
       { status: 500 }

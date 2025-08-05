@@ -3,18 +3,27 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { signOut } from 'next-auth/react';
 import Image from 'next/image';
-import { LayoutDashboard, Users, Settings, LogOut, Zap, ClipboardList, UserCheck } from 'lucide-react'; // නව icons එකතු කරගන්න
+import { LayoutDashboard, Users, Settings, LogOut, Zap, ClipboardList, UserCheck, Calendar, BarChart3 } from 'lucide-react'; // නව icons එකතු කරගන්න
 
 const Sidebar = ({ isOpen, toggleSidebar }) => {
     const pathname = usePathname();
 
     const navLinks = [
-        { name: 'Attendance', href: '/dashboard/attendance', icon: LayoutDashboard },
-        { name: 'Users', href: '/dashboard/users', icon: Users },
-        { name: 'Task Allocation', href: '/dashboard/task-allocation', icon: ClipboardList },
-        { name: 'Labour Allocation', href: '/dashboard/labour-allocation', icon: UserCheck },
-        { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+        { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+        { name: 'Attendance', href: '/dashboard/attendance', icon: UserCheck },
+        
+        { 
+            name: 'Task Allocation', 
+            href: '/dashboard/daily-task-allocation', 
+            icon: ClipboardList,
+        },
+        { 
+            name: 'Labour Allocation', 
+            href: '/dashboard/daily-labour-allocation', 
+            icon: Users,
+        },
     ];
 
     return (
@@ -37,8 +46,10 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
                 <nav className="flex-grow px-3 py-4 overflow-y-auto">
                     <ul className="space-y-2 font-medium">
                         {navLinks.map((link) => {
-                            // ✅ නිවැරදි කිරීම: '===' වෙනුවට 'startsWith' භාවිතා කිරීම
-                            const isActive = pathname.startsWith(link.href);
+                            // ✅ නිවැරදි කිරීම: Dashboard exact match, අනිත් routes සඳහා startsWith
+                            const isActive = link.href === '/dashboard' 
+                                ? pathname === '/dashboard'
+                                : pathname.startsWith(link.href);
                             
                             return (
                                 <li key={link.name}>
@@ -54,7 +65,18 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
                                         `}
                                     >
                                         <link.icon className={`w-5 h-5 transition-colors ${isActive ? 'text-white' : 'text-zinc-500 group-hover:text-white'}`} />
-                                        <span className="ms-3">{link.name}</span>
+                                        <span className="ms-3 flex-1">{link.name}</span>
+                                        {link.badge && (
+                                            <span className={`
+                                                px-2 py-1 text-xs font-medium rounded-full
+                                                ${isActive 
+                                                    ? 'bg-violet-800 text-violet-200' 
+                                                    : 'bg-zinc-700 text-zinc-300 group-hover:bg-zinc-600'
+                                                }
+                                            `}>
+                                                {link.badge}
+                                            </span>
+                                        )}
                                     </Link>
                                 </li>
                             );
@@ -63,7 +85,13 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
                 </nav>
 
                 <div className="px-3 py-4 mt-auto border-t border-zinc-800">
-                    <button className="w-full flex items-center p-2 rounded-lg group text-zinc-400 hover:bg-zinc-800 hover:text-white">
+                    <button 
+                        onClick={() => signOut({ 
+                            callbackUrl: '/login',
+                            redirect: true 
+                        })}
+                        className="w-full flex items-center p-2 rounded-lg group text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
+                    >
                         <LogOut className="w-5 h-5 text-zinc-500 group-hover:text-white" />
                         <span className="ms-3">Logout</span>
                     </button>

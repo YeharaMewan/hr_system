@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Plus, Loader, X, AlertCircle, CheckCircle, Trash2, Users, UserCheck, Copy, Calendar, MapPin, Search, Filter } from 'lucide-react';
+import Toast from '../ui/Toast';
 
 const BulkTaskCreationForm = ({ 
   users = [], 
@@ -15,6 +16,9 @@ const BulkTaskCreationForm = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
+  
+  // Toast state
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   
   // Search states
   const [leaderSearchTerms, setLeaderSearchTerms] = useState({}); // Per group search
@@ -364,6 +368,7 @@ const BulkTaskCreationForm = ({
 
       if (response.ok && data.success) {
         setSuccessMessage(`Successfully created ${data.tasks.length} tasks for ${leaderGroups.length} leader group(s)!`);
+        showToast(`🎉 Successfully created ${data.tasks.length} tasks for ${leaderGroups.length} leader group(s)!`, 'success');
         
         if (onTasksCreated) {
           onTasksCreated(data.tasks);
@@ -372,7 +377,8 @@ const BulkTaskCreationForm = ({
         setTimeout(() => {
           initializeForm();
           setSuccessMessage('');
-        }, 2000);
+          hideToast();
+        }, 3000);
 
       } else {
         throw new Error(data.message || 'Failed to create tasks');
@@ -382,14 +388,26 @@ const BulkTaskCreationForm = ({
       setErrors({ 
         submit: error.message || 'Failed to create tasks. Please try again.'
       });
+      showToast('❌ Failed to create tasks: ' + error.message, 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // Show toast message
+  const showToast = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+  };
+
+  // Hide toast message
+  const hideToast = () => {
+    setToast({ show: false, message: '', type: 'success' });
+  };
+
   // Handle cancel
   const handleCancel = () => {
     initializeForm();
+    hideToast();
     if (onCancel) {
       onCancel();
     }
@@ -492,7 +510,7 @@ const BulkTaskCreationForm = ({
                 {/* ==================== LEADERS SELECTION ==================== */}
                 <div className="mb-6 p-4 bg-zinc-700 rounded-lg">
                   <div>
-                    <label className="block text-sm font-medium mb-3 text-zinc-300 flex items-center gap-2">
+                    <label className="text-sm font-medium mb-3 text-zinc-300 flex items-center gap-2">
                       <Users className="w-4 h-4" />
                       Select Leaders for this Group
                     </label>
@@ -856,6 +874,15 @@ const BulkTaskCreationForm = ({
           </div>
         </div>
       </div>
+      
+      {/* Toast Notification */}
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        isVisible={toast.show}
+        onClose={hideToast}
+        duration={5000}
+      />
     </div>
   );
 };

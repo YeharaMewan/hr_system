@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Users, Loader, X, AlertCircle, CheckCircle, Search, Filter, User, Award } from 'lucide-react';
+import Toast from '../ui/Toast';
 
 const LabourAllocationForm = ({ 
   labours = [],
@@ -20,6 +21,9 @@ const LabourAllocationForm = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [skillFilter, setSkillFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  
+  // Toast state
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
   // Get unique skills for filter
   const uniqueSkills = [...new Set(labours.flatMap(labour => labour.skills || ['General']))];
@@ -49,6 +53,7 @@ const LabourAllocationForm = ({
       setStatusFilter('');
       setErrors({});
       setSuccessMessage('');
+      hideToast();
     }
   }, [isOpen]);
 
@@ -107,6 +112,7 @@ const LabourAllocationForm = ({
 
       if (response.ok && data.success) {
         setSuccessMessage(`Successfully allocated ${selectedLabours.length} labour(s) to the task!`);
+        showToast(`🎉 Successfully allocated ${selectedLabours.length} labour(s) to the task!`, 'success');
         
         // Call parent callback
         if (onLaboursAllocated) {
@@ -116,6 +122,7 @@ const LabourAllocationForm = ({
         // Close modal after short delay
         setTimeout(() => {
           setSuccessMessage('');
+          hideToast();
         }, 2000);
 
       } else {
@@ -126,9 +133,20 @@ const LabourAllocationForm = ({
       setErrors({ 
         submit: error.message || 'Failed to allocate labours. Please try again.'
       });
+      showToast('❌ Failed to allocate labours: ' + error.message, 'error');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Show toast message
+  const showToast = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+  };
+
+  // Hide toast message
+  const hideToast = () => {
+    setToast({ show: false, message: '', type: 'success' });
   };
 
   // Handle cancel
@@ -139,6 +157,7 @@ const LabourAllocationForm = ({
     setStatusFilter('');
     setErrors({});
     setSuccessMessage('');
+    hideToast();
     if (onCancel) {
       onCancel();
     }
@@ -266,7 +285,7 @@ const LabourAllocationForm = ({
               </div>
             </div>
 
-            {/* Status Filter */}
+            {/*
             <div>
               <div className="relative">
                 <Filter className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-zinc-500" />
@@ -282,7 +301,7 @@ const LabourAllocationForm = ({
                   <option value="inactive">Inactive</option>
                 </select>
               </div>
-            </div>
+            </div>*/}
           </div>
 
           {/* Selection Controls */}
@@ -405,6 +424,15 @@ const LabourAllocationForm = ({
           </div>
         </div>
       </div>
+      
+      {/* Toast Notification */}
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        isVisible={toast.show}
+        onClose={hideToast}
+        duration={4000}
+      />
     </div>
   );
 };

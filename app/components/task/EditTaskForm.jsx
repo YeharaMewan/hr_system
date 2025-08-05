@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Edit, Loader, X, AlertCircle, CheckCircle, Calendar, MapPin, Users } from 'lucide-react';
+import Toast from '../ui/Toast';
 
 const EditTaskForm = ({ 
   task = null,
@@ -25,6 +26,9 @@ const EditTaskForm = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
+  
+  // Toast state
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
   // Priority options
   const priorityOptions = [
@@ -107,6 +111,7 @@ const EditTaskForm = ({
 
       if (response.ok && data.success) {
         setSuccessMessage('Task updated successfully!');
+        showToast('🎉 Task updated successfully!', 'success');
         
         // Call parent callback
         if (onTaskUpdated) {
@@ -116,6 +121,7 @@ const EditTaskForm = ({
         // Close modal after short delay
         setTimeout(() => {
           setSuccessMessage('');
+          hideToast();
         }, 2000);
 
       } else {
@@ -126,15 +132,27 @@ const EditTaskForm = ({
       setErrors({ 
         submit: error.message || 'Failed to update task. Please try again.'
       });
+      showToast('❌ Failed to update task: ' + error.message, 'error');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // Show toast message
+  const showToast = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+  };
+
+  // Hide toast message
+  const hideToast = () => {
+    setToast({ show: false, message: '', type: 'success' });
   };
 
   // Handle cancel
   const handleCancel = () => {
     setErrors({});
     setSuccessMessage('');
+    hideToast();
     if (onCancel) {
       onCancel();
     }
@@ -347,6 +365,15 @@ const EditTaskForm = ({
           </div>
         </div>
       </div>
+      
+      {/* Toast Notification */}
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        isVisible={toast.show}
+        onClose={hideToast}
+        duration={4000}
+      />
     </div>
   );
 };

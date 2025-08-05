@@ -25,5 +25,5 @@ export default withAuth(
 
 // middleware එක ක්‍රියාත්මක විය යුතු මාර්ග (paths) මෙහි යොදන්න
 export const config = {
-  matcher: ["/dashboard"],
+  matcher: ["/dashboard/:path*"],
 };

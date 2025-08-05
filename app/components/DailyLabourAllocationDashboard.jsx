@@ -1,10 +1,27 @@
-// app/components/LabourAllocationDashboard.jsx
+// app/components/DailyLabourAllocationDashboard.jsx
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Users, TrendingUp, Building, Loader, AlertCircle, UserCheck, Settings, Save, Calendar } from 'lucide-react';
+import { 
+  Users, 
+  TrendingUp, 
+  Building, 
+  Loader, 
+  AlertCircle, 
+  UserCheck, 
+  Settings, 
+  Save, 
+  Calendar,
+  ArrowLeft,
+  ArrowRight,
+  RefreshCw,
+  Clock,
+  BarChart3
+} from 'lucide-react';
+import Toast from '../components/ui/Toast';
 
-const LabourAllocationDashboard = () => {
+const DailyLabourAllocationDashboard = () => {
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [labourData, setLabourData] = useState([]);
   const [companyStats, setCompanyStats] = useState([
     { name: 'Codegen + Aigrow staff\'s', count: 0, editable: true },
@@ -16,8 +33,15 @@ const LabourAllocationDashboard = () => {
   const [editingStats, setEditingStats] = useState({});
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
+  const [isToday, setIsToday] = useState(true);
+  
+  // Toast state
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+  
+  // Cache for data to avoid repeated API calls
+  const [dataCache, setDataCache] = useState({});
 
-  // Attendance status colors - dashboard එකෙන් ගත්ත color scheme
+  // Attendance status colors
   const statusColors = {
     "Present": "bg-green-500/20 text-green-300 border-green-500/30",
     "Work from home": "bg-sky-500/20 text-sky-300 border-sky-500/30",
@@ -36,25 +60,50 @@ const LabourAllocationDashboard = () => {
     return statusColors[status] || statusColors.Default;
   };
 
-  // ✅ CLEAN: Fetch labour allocation data without console logs
-  const fetchLabourData = async () => {
+  // Check if selected date is today
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0];
+    setIsToday(selectedDate === today);
+  }, [selectedDate]);
+
+  // Fetch labour allocation data for selected date
+  const fetchLabourDataForDate = async (date) => {
     try {
       setLoading(true);
-      
+      setError(null);
+
+      if (date === new Date().toISOString().split('T')[0]) {
+        // Today's data - fetch live data
+        await fetchLiveLabourData();
+      } else {
+        // Historical data - fetch from saved records
+        await fetchHistoricalLabourData(date);
+      }
+    } catch (err) {
+      console.error('Error fetching labour data:', err);
+      setError('Failed to load labour allocation data: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch live labour data (today's data)
+  const fetchLiveLabourData = async () => {
+    try {
       // Fetch tasks with allocations
       const tasksResponse = await fetch('/api/tasks');
       const tasksData = await tasksResponse.json();
       
-      // Use dedicated API endpoint for leaders with attendance status
-      const leadersResponse = await fetch('/api/labour-allocation/leaders-status');
-      const leadersData = await leadersResponse.json();
+      // Get today's attendance data for leaders
+      const today = new Date().toISOString().split('T')[0];
+      const attendanceResponse = await fetch(`/api/attendance/daily?date=${today}`);
+      const attendanceData = await attendanceResponse.json();
       
-      if (tasksData.success && leadersData.success) {
-        const leaders = leadersData.leaders;
+      if (tasksData.success && attendanceData.success) {
+        const leaders = attendanceData.leaders;
         
         // Calculate labour count for each leader
         const leaderLabourCount = leaders.map(leader => {
-          // Tasks API response structure අනුව leader matching කරන්න
           const leaderTasks = tasksData.tasks.filter(task => {
             if (task.assignedLeader && task.assignedLeader._id) {
               return task.assignedLeader._id === leader._id;
@@ -65,7 +114,6 @@ const LabourAllocationDashboard = () => {
             return task.assignedLeader === leader._id || task.leader === leader._id;
           });
           
-          // Allocations array එකෙන් labour count එක calculate කරන්න
           const totalLabours = leaderTasks.reduce((count, task) => {
             if (task.allocations && Array.isArray(task.allocations)) {
               return count + task.allocations.length;
@@ -83,78 +131,141 @@ const LabourAllocationDashboard = () => {
           };
         });
         
-        // Sort කරන්න name අනුව
         leaderLabourCount.sort((a, b) => a.name.localeCompare(b.name));
-        
         setLabourData(leaderLabourCount);
         
       } else {
-        throw new Error(tasksData.message || leadersData.message || 'Failed to fetch data');
+        throw new Error(tasksData.message || attendanceData.message || 'Failed to fetch live data');
       }
     } catch (err) {
-      console.error('❌ Error fetching labour data:', err);
-      setError('Failed to load labour allocation data: ' + err.message);
-    } finally {
-      setLoading(false);
+      throw err;
     }
   };
 
-  // ✅ ALTERNATIVE: Create a dedicated function to fetch leaders with attendance
-  const fetchLeadersWithAttendance = async () => {
+  // Fetch historical labour data
+  const fetchHistoricalLabourData = async (date) => {
     try {
-      console.log('🎯 Fetching leaders with attendance status...');
+      // Get saved labour allocation record for the date
+      const labourResponse = await fetch(`/api/labour-allocation/daily?date=${date}`);
+      const labourData = await labourResponse.json();
       
-      // Create dedicated API endpoint call
-      const response = await fetch('/api/labour-allocation/leaders-status');
-      const data = await response.json();
+      // Get attendance data for the specific date
+      const attendanceResponse = await fetch(`/api/attendance/daily?date=${date}`);
+      const attendanceData = await attendanceResponse.json();
       
-      if (data.success) {
-        console.log('✅ Leaders with attendance fetched:', data.leaders);
-        return data.leaders;
+      if (labourData.success && labourData.record) {
+        // If we have saved labour allocation data, use it
+        const historicalLabourData = labourData.record.leaderAllocations.map(allocation => {
+          // Find corresponding attendance data for this leader
+          const attendanceRecord = attendanceData.success && attendanceData.leaders 
+            ? attendanceData.leaders.find(leader => leader._id.toString() === allocation.leaderId.toString())
+            : null;
+            
+          return {
+            id: allocation.leaderId,
+            name: allocation.leaderName,
+            email: allocation.leaderId?.email || 'N/A',
+            labourCount: allocation.labourCount,
+            tasksCount: allocation.tasksCount,
+            attendanceStatus: attendanceRecord ? attendanceRecord.attendanceStatus : (allocation.attendanceStatus || 'Not Marked')
+          };
+        });
+        
+        setLabourData(historicalLabourData);
+        
+        // Set company stats if available
+        if (labourData.record.companyStats) {
+          setCompanyStats(labourData.record.companyStats);
+        }
+        
+        // Set last saved time
+        if (labourData.record.updatedAt) {
+          setLastSaved(new Date(labourData.record.updatedAt));
+        }
+      } else if (attendanceData.success && attendanceData.leaders) {
+        // If no saved labour allocation but we have attendance data, 
+        // create basic structure with attendance status
+        const basicLabourData = attendanceData.leaders.map(leader => ({
+          id: leader._id,
+          name: leader.name,
+          email: leader.email,
+          labourCount: 0,
+          tasksCount: 0,
+          attendanceStatus: leader.attendanceStatus
+        }));
+        
+        setLabourData(basicLabourData);
+        setCompanyStats([
+          { name: 'Codegen + Aigrow staff\'s', count: 0, editable: true },
+          { name: 'Ram studios', count: 0, editable: true },
+          { name: 'Rise Technology', count: 0, editable: true }
+        ]);
       } else {
-        throw new Error(data.message || 'Failed to fetch leaders attendance');
+        // No data found for this date
+        setLabourData([]);
+        setCompanyStats([
+          { name: 'Codegen + Aigrow staff\'s', count: 0, editable: true },
+          { name: 'Ram studios', count: 0, editable: true },
+          { name: 'Rise Technology', count: 0, editable: true }
+        ]);
       }
     } catch (err) {
-      console.error('❌ Error fetching leaders attendance:', err);
-      // Fallback to original method
-      return null;
+      throw err;
     }
   };
 
-  // Load saved company stats from API
-  const loadCompanyStats = async () => {
+  // Load saved company stats from API for specific date
+  const loadCompanyStats = async (date = null) => {
     try {
-      const response = await fetch('/api/labour-allocation/company-stats');
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.stats) {
-          setCompanyStats(data.stats);
-          if (data.record) {
-            setLastSaved(new Date(data.record.updatedAt));
+      const targetDate = date || new Date().toISOString().split('T')[0];
+      
+      // If it's today, get the latest company stats
+      if (targetDate === new Date().toISOString().split('T')[0]) {
+        const response = await fetch('/api/labour-allocation/company-stats');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.stats) {
+            setCompanyStats(data.stats);
+            if (data.record) {
+              setLastSaved(new Date(data.record.updatedAt));
+            }
+            return;
+          }
+        }
+      } else {
+        // For historical dates, try to get saved labour allocation record
+        const response = await fetch(`/api/labour-allocation/daily?date=${targetDate}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.record && data.record.companyStats) {
+            setCompanyStats(data.record.companyStats);
+            if (data.record.updatedAt) {
+              setLastSaved(new Date(data.record.updatedAt));
+            }
+            return;
           }
         }
       }
+      
+      // Fallback to default values
+      setCompanyStats([
+        { name: 'Codegen + Aigrow staff\'s', count: 0, editable: true },
+        { name: 'Ram studios', count: 0, editable: true },
+        { name: 'Rise Technology', count: 0, editable: true }
+      ]);
+      
     } catch (err) {
-      console.error('Error loading saved company stats:', err);
-      // Fallback to localStorage
-      try {
-        const saved = localStorage.getItem('companyStats');
-        if (saved) {
-          const parsedStats = JSON.parse(saved);
-          setCompanyStats(parsedStats);
-          
-          const lastSavedTime = localStorage.getItem('companyStatsLastSaved');
-          if (lastSavedTime) {
-            setLastSaved(new Date(lastSavedTime));
-          }
-        }
-      } catch (localError) {
-        console.error('Error loading from localStorage:', localError);
-      }
+      console.error('Error loading company stats:', err);
+      // Fallback to default values
+      setCompanyStats([
+        { name: 'Codegen + Aigrow staff\'s', count: 0, editable: true },
+        { name: 'Ram studios', count: 0, editable: true },
+        { name: 'Rise Technology', count: 0, editable: true }
+      ]);
     }
   };
 
-  // ✅ CLEAN: Enhanced save company stats function
+  // Save company stats
   const saveCompanyStats = async () => {
     setSaving(true);
     try {
@@ -176,15 +287,6 @@ const LabourAllocationDashboard = () => {
       
     } catch (err) {
       console.error('Error saving company stats:', err);
-      
-      // Fallback to localStorage
-      try {
-        localStorage.setItem('companyStats', JSON.stringify(companyStats));
-        localStorage.setItem('companyStatsLastSaved', new Date().toISOString());
-        setLastSaved(new Date());
-      } catch (localError) {
-        console.error('Failed to save to localStorage:', localError);
-      }
     } finally {
       setSaving(false);
     }
@@ -192,7 +294,19 @@ const LabourAllocationDashboard = () => {
 
   // Save daily labour allocation data
   const saveDailyData = async () => {
+    if (!isToday) {
+      showToast('Historical data cannot be modified', 'warning');
+      return;
+    }
+
     try {
+      setSaving(true);
+      
+      // Get current attendance data for today
+      const today = new Date().toISOString().split('T')[0];
+      const attendanceResponse = await fetch(`/api/attendance/daily?date=${today}`);
+      const attendanceData = await attendanceResponse.json();
+      
       const dataToSave = {
         labourData: labourData,
         companyStats: companyStats,
@@ -200,12 +314,14 @@ const LabourAllocationDashboard = () => {
           totalLabourCount,
           theRiseTotalEmployees,
           totalCompanyEmployees,
+          workingLeaderCount,
           codegenStaffCount,
           ramStudiosCount,
           riseTechnologyCount
         },
-        date: new Date().toISOString(),
-        timestamp: new Date().getTime()
+        date: selectedDate,
+        // Include attendance data for proper historical tracking
+        attendanceData: attendanceData.success ? attendanceData.leaders : null
       };
 
       const response = await fetch('/api/labour-allocation/daily', {
@@ -218,33 +334,32 @@ const LabourAllocationDashboard = () => {
         const data = await response.json();
         if (data.success) {
           setLastSaved(new Date());
+          showToast('🎉 Labour allocation data saved successfully!', 'success');
         }
+      } else {
+        throw new Error('Failed to save daily data');
       }
     } catch (err) {
       console.error('Error saving daily data:', err);
-      // Fallback to localStorage
-      try {
-        const fallbackData = {
-          labourData,
-          companyStats,
-          calculatedValues: {
-            totalLabourCount,
-            theRiseTotalEmployees,
-            totalCompanyEmployees
-          },
-          savedAt: new Date().toISOString()
-        };
-        localStorage.setItem('dailyLabourAllocation', JSON.stringify(fallbackData));
-      } catch (localError) {
-        console.error('Failed to save to localStorage:', localError);
-      }
+      showToast('❌ Failed to save daily data: ' + err.message, 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
-  // Calculate total labour count
-  const totalLabourCount = labourData.reduce((total, leader) => total + leader.labourCount, 0);
+  // Show toast message
+  const showToast = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+  };
 
-  // ✅ NEW: Calculate working leader count based on attendance status
+  // Hide toast message
+  const hideToast = () => {
+    setToast({ show: false, message: '', type: 'success' });
+  };
+
+  // Calculate metrics
+  const totalLabourCount = labourData.reduce((total, leader) => total + leader.labourCount, 0);
+  
   const calculateWorkingLeaderCount = () => {
     const workingStatuses = ['Present', 'Work from home', 'Work from out of Rise'];
     return labourData.filter(leader => 
@@ -253,18 +368,38 @@ const LabourAllocationDashboard = () => {
   };
 
   const workingLeaderCount = calculateWorkingLeaderCount();
-
-  // Calculate "The rise total employees" automatically
   const codegenStaffCount = companyStats[0]?.count || 0;
   const theRiseTotalEmployees = totalLabourCount + codegenStaffCount + workingLeaderCount;
-
-  // Calculate total company employees
   const ramStudiosCount = companyStats[1]?.count || 0;
   const riseTechnologyCount = companyStats[2]?.count || 0;
   const totalCompanyEmployees = theRiseTotalEmployees + ramStudiosCount + riseTechnologyCount;
 
+  // Date navigation functions
+  const goToPreviousDay = () => {
+    const prevDate = new Date(selectedDate);
+    prevDate.setDate(prevDate.getDate() - 1);
+    setSelectedDate(prevDate.toISOString().split('T')[0]);
+  };
+
+  const goToNextDay = () => {
+    const nextDate = new Date(selectedDate);
+    nextDate.setDate(nextDate.getDate() + 1);
+    const today = new Date().toISOString().split('T')[0];
+    if (nextDate.toISOString().split('T')[0] <= today) {
+      setSelectedDate(nextDate.toISOString().split('T')[0]);
+    }
+  };
+
+  const goToToday = () => {
+    setSelectedDate(new Date().toISOString().split('T')[0]);
+  };
+
   // Update company stats
   const updateCompanyStat = (index, newCount) => {
+    if (!isToday) {
+      showToast('Historical data cannot be modified', 'warning');
+      return;
+    }
     const updatedStats = [...companyStats];
     updatedStats[index].count = parseInt(newCount) || 0;
     setCompanyStats(updatedStats);
@@ -272,6 +407,10 @@ const LabourAllocationDashboard = () => {
 
   // Handle editing company stats
   const handleEditStat = (index) => {
+    if (!isToday) {
+      showToast('Historical data cannot be modified', 'warning');
+      return;
+    }
     setEditingStats(prev => ({ ...prev, [index]: true }));
   };
 
@@ -281,12 +420,14 @@ const LabourAllocationDashboard = () => {
 
   // useEffect hooks
   useEffect(() => {
-    fetchLabourData();
-    loadCompanyStats();
-  }, []);
+    fetchLabourDataForDate(selectedDate);
+    loadCompanyStats(selectedDate);
+  }, [selectedDate]);
 
-  // Auto-save with debounce
+  // Auto-save with debounce (only for today's data)
   useEffect(() => {
+    if (!isToday) return;
+    
     const timeoutId = setTimeout(() => {
       if (companyStats.some(stat => stat.count > 0)) {
         saveCompanyStats();
@@ -294,7 +435,7 @@ const LabourAllocationDashboard = () => {
     }, 2000);
 
     return () => clearTimeout(timeoutId);
-  }, [companyStats]);
+  }, [companyStats, isToday]);
 
   if (loading) {
     return (
@@ -315,10 +456,7 @@ const LabourAllocationDashboard = () => {
           <h2 className="text-2xl font-bold text-white mb-2">Error Loading Data</h2>
           <p className="text-zinc-400 mb-6">{error}</p>
           <button
-            onClick={() => {
-              setError(null);
-              fetchLabourData();
-            }}
+            onClick={() => fetchLabourDataForDate(selectedDate)}
             className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-2 rounded-lg transition-colors"
           >
             Try Again
@@ -332,24 +470,25 @@ const LabourAllocationDashboard = () => {
     <div className="min-h-screen bg-zinc-950 text-white">
       <div className="max-w-7xl mx-auto p-6">
         
-        {/* Header */}
+        {/* Header with Date Navigation */}
         <div className="mb-8">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-3xl font-bold mb-2">Labour Allocation Dashboard</h1>
-              <p className="text-zinc-400">Track labour distribution across projects and leaders</p>
+              <h1 className="text-3xl font-bold mb-2">Labour Allocation</h1>
             </div>
             <div className="flex items-center gap-4">
-              <button
-                onClick={saveDailyData}
-                className={`flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg transition-colors ${
-                  saving ? 'opacity-75' : ''
-                }`}
-                disabled={saving}
-              >
-                <Save className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />
-                {saving ? 'Saving...' : 'Save Data'}
-              </button>
+              {isToday && (
+                <button
+                  onClick={saveDailyData}
+                  className={`flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg transition-colors ${
+                    saving ? 'opacity-75' : ''
+                  }`}
+                  disabled={saving}
+                >
+                  <Save className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />
+                  {saving ? 'Saving...' : 'Save Today\'s Data'}
+                </button>
+              )}
               {lastSaved && (
                 <p className="text-xs text-zinc-500">
                   Last saved: {lastSaved.toLocaleTimeString()}
@@ -357,10 +496,82 @@ const LabourAllocationDashboard = () => {
               )}
             </div>
           </div>
+
+          {/* Date Navigation */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={goToPreviousDay}
+                  className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+                
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-violet-400" />
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    max={new Date().toISOString().split('T')[0]}
+                    className="bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-white"
+                  />
+                  {isToday && (
+                    <span className="bg-green-600/20 text-green-400 px-2 py-1 rounded text-sm border border-green-500/30">
+                      Today - Live Data
+                    </span>
+                  )}
+                  {!isToday && (
+                    <span className="bg-blue-600/20 text-blue-400 px-2 py-1 rounded text-sm border border-blue-500/30">
+                      Historical Data
+                    </span>
+                  )}
+                </div>
+
+                <button
+                  onClick={goToNextDay}
+                  disabled={selectedDate >= new Date().toISOString().split('T')[0]}
+                  className={`p-2 rounded-lg transition-colors ${
+                    selectedDate >= new Date().toISOString().split('T')[0]
+                      ? 'bg-zinc-800/50 text-zinc-600 cursor-not-allowed'
+                      : 'bg-zinc-800 hover:bg-zinc-700'
+                  }`}
+                >
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={goToToday}
+                  className="flex items-center gap-2 bg-violet-600/20 hover:bg-violet-600/30 text-violet-400 px-3 py-2 rounded-lg transition-colors border border-violet-500/30"
+                >
+                  <Clock className="w-4 h-4" />
+                  Today
+                </button>
+                
+                <button
+                  onClick={() => fetchLabourDataForDate(selectedDate)}
+                  className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-2 rounded-lg transition-colors border border-zinc-700"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Refresh
+                </button>
+              </div>
+            </div>
+            
+            {/* Information Message */}
+            <div className="mt-3 p-3 bg-blue-900/20 border border-blue-500/30 rounded-lg">
+              <p className="text-blue-300 text-sm">
+                <strong>📅 Date-specific Data:</strong> {isToday ? 'Live attendance status and current task allocations are shown.' : `Historical data for ${new Date(selectedDate).toLocaleDateString()} including saved attendance status and company statistics.`}
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
             <div className="flex items-center">
               <div className="p-2 bg-violet-600/20 rounded-lg">
@@ -387,6 +598,18 @@ const LabourAllocationDashboard = () => {
 
           <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
             <div className="flex items-center">
+              <div className="p-2 bg-orange-600/20 rounded-lg">
+                <UserCheck className="w-6 h-6 text-orange-400" />
+              </div>
+              <div className="ml-4">
+                <p className="text-zinc-400 text-sm">Working Leaders</p>
+                <p className="text-2xl font-bold text-white">{workingLeaderCount}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
+            <div className="flex items-center">
               <div className="p-2 bg-green-600/20 rounded-lg">
                 <Building className="w-6 h-6 text-green-400" />
               </div>
@@ -407,7 +630,7 @@ const LabourAllocationDashboard = () => {
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-white flex items-center">
                   <UserCheck className="w-6 h-6 mr-2 text-violet-400" />
-                  Leaders & Employees
+                  Leaders & Employees ({new Date(selectedDate).toLocaleDateString()})
                 </h2>
                 <div className="bg-violet-600/20 px-3 py-1 rounded-full">
                   <span className="text-violet-400 text-sm font-medium">
@@ -434,13 +657,13 @@ const LabourAllocationDashboard = () => {
                     {labourData.length === 0 ? (
                       <tr>
                         <td colSpan="2" className="text-center py-8 text-zinc-400">
-                          No leaders found or no tasks allocated
+                          {isToday ? 'No leaders found or no tasks allocated' : 'No data available for this date'}
                         </td>
                       </tr>
                     ) : (
                       labourData.map((leader, index) => (
                         <tr 
-                          key={leader.id} 
+                          key={leader.id || index} 
                           className={`border-b border-zinc-700/50 hover:bg-zinc-800/50 transition-colors ${
                             leader.labourCount === 0 ? 'bg-red-900/20' : ''
                           }`}
@@ -451,7 +674,6 @@ const LabourAllocationDashboard = () => {
                                 <div className="font-medium text-white">{leader.name}</div>
                                 <div className="text-xs text-zinc-400">{leader.email}</div>
                               </div>
-                              {/* ✅ FIXED: නිවැරදි attendance status display with proper debugging */}
                               <div className={`px-2 py-1 rounded-full text-xs font-medium border ${getAttendanceStatusClass(leader.attendanceStatus)}`}>
                                 {leader.attendanceStatus}
                               </div>
@@ -490,7 +712,7 @@ const LabourAllocationDashboard = () => {
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-bold text-white flex items-center">
                   <Building className="w-6 h-6 mr-2 text-blue-400" />
-                  Company Statistics
+                  Company Statistics ({new Date(selectedDate).toLocaleDateString()})
                 </h2>
                 <div className="bg-blue-600/20 px-3 py-1 rounded-full">
                   <span className="text-blue-400 text-sm font-medium">
@@ -532,7 +754,7 @@ const LabourAllocationDashboard = () => {
                       </td>
                     </tr>
 
-                    {/* ✅ NEW: Second row - WORKING LEADERS COUNT */}
+                    {/* Second row - WORKING LEADERS COUNT */}
                     <tr className="border-b border-zinc-700/50 bg-orange-900/20">
                       <td className="py-3 px-4 font-medium text-orange-400">
                         WORKING LEADERS COUNT
@@ -553,7 +775,7 @@ const LabourAllocationDashboard = () => {
                         <div className="font-medium text-white">{companyStats[0]?.name}</div>
                       </td>
                       <td className="text-right py-3 px-4">
-                        {editingStats[0] ? (
+                        {editingStats[0] && isToday ? (
                           <input
                             type="number"
                             value={companyStats[0]?.count || 0}
@@ -572,8 +794,13 @@ const LabourAllocationDashboard = () => {
                         {!editingStats[0] ? (
                           <button
                             onClick={() => handleEditStat(0)}
-                            className="text-blue-400 hover:text-blue-300 transition-colors p-1"
-                            title="Edit count"
+                            disabled={!isToday}
+                            className={`p-1 transition-colors ${
+                              isToday 
+                                ? 'text-blue-400 hover:text-blue-300' 
+                                : 'text-zinc-600 cursor-not-allowed'
+                            }`}
+                            title={isToday ? "Edit count" : "Historical data cannot be edited"}
                           >
                             <Settings className="w-4 h-4" />
                           </button>
@@ -616,7 +843,7 @@ const LabourAllocationDashboard = () => {
                             <div className="font-medium text-white">{stat.name}</div>
                           </td>
                           <td className="text-right py-3 px-4">
-                            {editingStats[actualIndex] ? (
+                            {editingStats[actualIndex] && isToday ? (
                               <input
                                 type="number"
                                 value={stat.count || 0}
@@ -635,8 +862,13 @@ const LabourAllocationDashboard = () => {
                             {!editingStats[actualIndex] ? (
                               <button
                                 onClick={() => handleEditStat(actualIndex)}
-                                className="text-blue-400 hover:text-blue-300 transition-colors p-1"
-                                title="Edit count"
+                                disabled={!isToday}
+                                className={`p-1 transition-colors ${
+                                  isToday 
+                                    ? 'text-blue-400 hover:text-blue-300' 
+                                    : 'text-zinc-600 cursor-not-allowed'
+                                }`}
+                                title={isToday ? "Edit count" : "Historical data cannot be edited"}
                               >
                                 <Settings className="w-4 h-4" />
                               </button>
@@ -671,14 +903,21 @@ const LabourAllocationDashboard = () => {
                   </tbody>
                 </table>
               </div>
-
-
             </div>
           </div>
         </div>
       </div>
+      
+      {/* Toast Notification */}
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        isVisible={toast.show}
+        onClose={hideToast}
+        duration={4000}
+      />
     </div>
   );
 };
 
-export default LabourAllocationDashboard;
+export default DailyLabourAllocationDashboard;

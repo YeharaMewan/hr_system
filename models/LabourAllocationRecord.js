@@ -135,25 +135,29 @@ LabourAllocationRecordSchema.statics.getTodaysRecord = async function(userId) {
   return record;
 };
 
-// Instance method to update labour allocations
-LabourAllocationRecordSchema.methods.updateLabourAllocations = async function(labourData) {
-  this.leaderAllocations = labourData.map(leader => ({
-    leaderId: leader.id,
-    leaderName: leader.name,
-    labourCount: leader.labourCount,
-    tasksCount: leader.tasksCount,
-    attendanceStatus: leader.attendanceStatus || 'Not Marked'
-  }));
-  
-  // Recalculate totals
-  this.totalLabourCount = this.leaderAllocations.reduce((total, leader) => 
-    total + leader.labourCount, 0
-  );
-  this.totalLeaders = this.leaderAllocations.length;
-  
-  this.updatedAt = new Date();
-  return await this.save();
-};
+  // Instance method to update labour allocations
+  LabourAllocationRecordSchema.methods.updateLabourAllocations = async function(labourData, attendanceData = []) {
+    // Create attendance map for quick lookup
+    const attendanceMap = {};
+    attendanceData.forEach(record => {
+      attendanceMap[record.userId || record.id] = record.status || record.attendanceStatus;
+    });
 
-export default mongoose.models.LabourAllocationRecord || 
+    this.leaderAllocations = labourData.map(leader => ({
+      leaderId: leader.id,
+      leaderName: leader.name,
+      labourCount: leader.labourCount,
+      tasksCount: leader.tasksCount,
+      attendanceStatus: attendanceMap[leader.id] || leader.attendanceStatus || 'Not Marked'
+    }));
+    
+    // Recalculate totals
+    this.totalLabourCount = this.leaderAllocations.reduce((total, leader) => 
+      total + leader.labourCount, 0
+    );
+    this.totalLeaders = this.leaderAllocations.length;
+    
+    this.updatedAt = new Date();
+    return await this.save();
+  };export default mongoose.models.LabourAllocationRecord || 
   mongoose.model('LabourAllocationRecord', LabourAllocationRecordSchema);
