@@ -7,6 +7,7 @@ import connectMongoDB from "@/lib/mongodb";
 import User from "@/models/User";
 import Attendance from "@/models/Attendance";
 import Task from "@/models/Task";
+import LabourAllocationRecord from "@/models/LabourAllocationRecord";
 
 export async function GET(request) {
   try {
@@ -28,7 +29,7 @@ export async function GET(request) {
     endOfDay.setHours(23, 59, 59, 999);
 
     // Fetch all data in parallel
-    const [allUsers, leaders, todayAttendance, tasks] = await Promise.all([
+    const [allUsers, leaders, todayAttendance, tasks, todayLabourAllocation] = await Promise.all([
       // Get all users for total count
       User.find({ 
         role: { $in: ['leader', 'labour'] },
@@ -47,7 +48,16 @@ export async function GET(request) {
       }).populate('userId', 'role').select('userId status').lean(),
       
       // Get all tasks
-      Task.find({}).select('status').lean()
+      Task.find({}).select('status').lean(),
+      
+      // Get today's labour allocation record to get total employee count
+      LabourAllocationRecord.findOne({
+        date: { $gte: today, $lte: endOfDay }
+      }).select('totalLabourCount leaderAllocations companyStats calculatedValues').lean()
+        .catch(err => {
+          console.warn("Warning: Could not fetch labour allocation record:", err.message);
+          return null; // Return null if there's an error
+        })
     ]);
 
     // Create attendance map for leaders only
@@ -63,18 +73,56 @@ export async function GET(request) {
     const totalLabours = allUsers.filter(user => user.role === 'labour').length;
     const totalLeaders = allUsers.filter(user => user.role === 'leader').length;
 
-    // Calculate attendance statistics for leaders only
-    const presentLeaders = leaders.filter(leader => 
+    // Calculate attendance statistics for leaders (Present + Work from home + Work from out of Rise)
+    const workingLeaders = leaders.filter(leader => {
+      const status = attendanceMap[leader._id.toString()];
+      return status === 'Present' || status === 'Work from home' || status === 'Work from out of Rise';
+    });
+    
+    const presentLeadersOnly = leaders.filter(leader => 
       attendanceMap[leader._id.toString()] === 'Present'
     );
     
-    const todayAttendanceCount = presentLeaders.length;
-    const presentLabours = 0; // Not showing labour attendance in overview
+    const workingLeadersCount = workingLeaders.length;
+    const presentLeadersCount = presentLeadersOnly.length;
+    
+    // Get total employee count from today's labour allocation record
+    let totalEmployeesToday = 0;
+    let totalLabourCountToday = 0;
+    let totalCompanyEmployeesToday = 0;
+    let codegenAigrowCount = 0;
+    let ramStudiosCount = 0;
+    let riseTechnologyCount = 0;
+    
+    if (todayLabourAllocation) {
+      // Get the total labour count from the record
+      totalLabourCountToday = todayLabourAllocation.totalLabourCount || 0;
+      
+      // Extract individual company stats
+      if (todayLabourAllocation.companyStats && todayLabourAllocation.companyStats.length > 0) {
+        todayLabourAllocation.companyStats.forEach(company => {
+          if (company.name.toLowerCase().includes('codegen') || company.name.toLowerCase().includes('aigrow')) {
+            codegenAigrowCount = company.count || 0;
+          } else if (company.name.toLowerCase().includes('ram studios')) {
+            ramStudiosCount = company.count || 0;
+          } else if (company.name.toLowerCase().includes('rise technology')) {
+            riseTechnologyCount = company.count || 0;
+          }
+        });
+        
+        totalCompanyEmployeesToday = codegenAigrowCount + ramStudiosCount + riseTechnologyCount;
+      }
+      
+      // Calculate final total attendance: Total Labour + Working Leaders + Company Employees
+      totalEmployeesToday = totalLabourCountToday + workingLeadersCount + totalCompanyEmployeesToday;
+    }
+    
+    // If no labour allocation record exists, fall back to working leaders count
+    const finalTodayAttendance = totalEmployeesToday > 0 ? totalEmployeesToday : workingLeadersCount;
 
-    // Calculate attendance rates for leaders only
-    const attendanceRate = totalLeaders > 0 ? Math.round((todayAttendanceCount / totalLeaders) * 100) : 0;
-    const leaderAttendanceRate = attendanceRate;
-    const labourAttendanceRate = 0; // Not calculating labour attendance
+    // Calculate attendance rates (remove percentage display for main attendance)
+    const leaderAttendanceRate = totalLeaders > 0 ? Math.round((presentLeadersCount / totalLeaders) * 100) : 0;
+    // No overall attendance rate calculation as requested
 
     // Calculate task statistics
     const activeTasks = tasks.filter(task => 
@@ -109,15 +157,20 @@ export async function GET(request) {
         totalLabours,
         totalLeaders,
         
-        // Attendance statistics (leaders only)
-        todayAttendance: todayAttendanceCount,
+        // Attendance statistics (Total Labour + Working Leaders + Company Employees)
+        todayAttendance: finalTodayAttendance,
         todayAttendanceBreakdown: {
-          leaders: todayAttendanceCount, // Same as todayAttendance since we're only showing leaders
-          labours: presentLabours // Will be 0
+          leaders: workingLeadersCount, // Present + WFH + Work from out of Rise
+          presentLeadersOnly: presentLeadersCount, // Only Present leaders
+          labours: totalLabourCountToday,
+          totalEmployees: totalEmployeesToday,
+          companyEmployees: totalCompanyEmployeesToday,
+          codegenAigrow: codegenAigrowCount,
+          ramStudios: ramStudiosCount,
+          riseTechnology: riseTechnologyCount
         },
-        attendanceRate,
+        attendanceRate: null, // No percentage as requested
         leaderAttendanceRate,
-        labourAttendanceRate,
         
         // Detailed attendance breakdown
         attendanceStatusBreakdown,

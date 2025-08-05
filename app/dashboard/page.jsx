@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
+import { useAutoSave } from '@/hooks/useAutoSave';
+import { dataChangeDetector } from '@/utils/dataChangeDetector';
 import { 
   Users, 
   UserCheck, 
@@ -14,11 +16,12 @@ import {
   AlertCircle,
   RefreshCw,
   BarChart3,
-  PieChart
+  PieChart,
+  Clock
 } from 'lucide-react';
 
 function DashboardPage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [dashboardData, setDashboardData] = useState({
     totalUsers: 0,
     totalLabours: 0,
@@ -37,15 +40,133 @@ function DashboardPage() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Auto-save hook with save function
+  const autoSaveFunction = async (data) => {
+    // Check authentication before saving
+    if (status !== 'authenticated' || !session) {
+      console.log('⏸️ Skipping auto-save - not authenticated');
+      throw new Error('Not authenticated');
+    }
+
+    const response = await fetch('/api/dashboard/auto-save', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ dashboardData: data })
+    });
+
+    if (!response.ok) {
+      throw new Error('Auto-save failed');
+    }
+
+    return await response.json();
+  };
+
+  const {
+    hasChanges,
+    isSaving,
+    lastSaved,
+    initializeData,
+    trackChanges,
+    triggerAutoSave,
+    manualSave
+  } = useAutoSave(autoSaveFunction, 3000); // 3 second delay
 
   useEffect(() => {
-    fetchDashboardData();
-  }, []);
+    // Only initialize once when session is authenticated and not already initialized
+    if (status === 'authenticated' && session && !isInitialized) {
+      console.log('🚀 Initializing dashboard for authenticated user:', session.user.name);
+      setIsInitialized(true);
+      fetchDashboardData();
+      
+      // Setup change detection listener
+      const removeListener = dataChangeDetector.addListener((changes, newData) => {
+        console.log('📊 Dashboard data changed:', changes.length, 'changes detected');
+        triggerAutoSave(newData);
+      });
+      
+      // Setup periodic refresh (longer interval since we have event-driven saves)
+      const interval = setInterval(() => {
+        if (status === 'authenticated') { // Only refresh if still authenticated
+          fetchDashboardData();
+        }
+      }, 600000); // 10 minutes
+      
+      setAutoRefreshInterval(interval);
+      
+      // Cleanup function for this effect
+      return () => {
+        if (interval) {
+          console.log('🧹 Cleaning up dashboard intervals');
+          clearInterval(interval);
+        }
+        removeListener();
+      };
+    }
+    
+    // Handle unauthenticated state
+    if (status === 'unauthenticated') {
+      console.log('❌ User not authenticated, clearing dashboard data');
+      setIsInitialized(false);
+      setDashboardData({
+        totalUsers: 0,
+        totalLabours: 0,
+        totalLeaders: 0,
+        todayAttendance: 0,
+        todayAttendanceBreakdown: { leaders: 0, labours: 0 },
+        activeTasks: 0,
+        completedTasks: 0,
+        pendingAllocations: 0,
+        companyStats: [],
+        attendanceRate: 0,
+        attendanceStatusBreakdown: {}
+      });
+      
+      // Clear any existing intervals
+      if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        setAutoRefreshInterval(null);
+      }
+    }
+  }, [status, session, isInitialized, triggerAutoSave]); // Add dependencies
+
+  // Track changes when dashboard data updates
+  useEffect(() => {
+    if (dashboardData.totalUsers > 0 && status === 'authenticated') { // Only track when authenticated
+      const hasDataChanged = dataChangeDetector.checkForChanges(dashboardData);
+      if (hasDataChanged) {
+        console.log('🔄 Triggering save due to data changes...');
+      }
+    }
+  }, [dashboardData, status]);
+
+  // Cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      if (autoRefreshInterval) {
+        console.log('🧹 Cleaning up dashboard on unmount');
+        clearInterval(autoRefreshInterval);
+      }
+    };
+  }, [autoRefreshInterval]);
 
   const fetchDashboardData = async () => {
+    // Don't fetch if not authenticated
+    if (status !== 'authenticated' || !session) {
+      console.log('⏸️ Skipping data fetch - not authenticated');
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
+      console.log('📡 Fetching dashboard data...');
+      
       // Fetch dashboard stats and company stats in parallel
       const [dashboardRes, companyStatsRes] = await Promise.all([
         fetch('/api/dashboard/stats'),
@@ -59,7 +180,7 @@ function DashboardPage() {
       // Use data from the new dashboard stats endpoint
       const stats = dashboardStats.data || {};
       
-      setDashboardData({
+      const newData = {
         totalUsers: stats.totalUsers || 0,
         totalLabours: stats.totalLabours || 0,
         totalLeaders: stats.totalLeaders || 0,
@@ -71,7 +192,14 @@ function DashboardPage() {
         companyStats: companyStats.stats || [],
         attendanceRate: stats.attendanceRate || 0,
         attendanceStatusBreakdown: stats.attendanceStatusBreakdown || {}
-      });
+      };
+
+      setDashboardData(newData);
+      
+      // Initialize auto-save tracking with the fetched data
+      initializeData(newData);
+      
+      console.log('✅ Dashboard data loaded successfully');
 
     } catch (error) {
       // Only log to console in development
@@ -101,6 +229,30 @@ function DashboardPage() {
     }
   };
 
+  // Show loading state during authentication
+  if (status === 'loading') {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="flex flex-col items-center gap-4">
+          <RefreshCw className="w-8 h-8 text-violet-500 animate-spin" />
+          <p className="text-zinc-400">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error if not authenticated
+  if (status === 'unauthenticated' || !session) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="flex flex-col items-center gap-4">
+          <AlertCircle className="w-8 h-8 text-red-500" />
+          <p className="text-zinc-400">Please log in to access the dashboard</p>
+        </div>
+      </div>
+    );
+  }
+
   const StatCard = ({ title, value, icon: Icon, color, description, trend, breakdown, rate }) => (
     <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-6 hover:border-zinc-600 transition-colors">
       <div className="flex items-center justify-between">
@@ -114,7 +266,8 @@ function DashboardPage() {
             ) : (
               <span className="flex items-baseline gap-2">
                 {value}
-                {rate !== undefined && (
+                {/* Remove percentage display for main attendance as requested */}
+                {rate !== undefined && title !== "Today's Total Attendance" && (
                   <span className="text-sm font-normal text-zinc-400">
                     ({rate}%)
                   </span>
@@ -128,13 +281,37 @@ function DashboardPage() {
           {breakdown && !loading && (
             <div className="text-xs text-zinc-400 mt-2 space-y-1">
               <div className="flex justify-between">
-                <span>Leaders Present:</span>
+                <span>Working Leaders:</span>
                 <span className="text-yellow-500 font-semibold">{breakdown.leaders}</span>
               </div>
               {breakdown.labours > 0 && (
                 <div className="flex justify-between">
-                  <span>Labours Present:</span>
+                  <span>Labour Count:</span>
                   <span className="text-green-500 font-semibold">{breakdown.labours}</span>
+                </div>
+              )}
+              {breakdown.codegenAigrow > 0 && (
+                <div className="flex justify-between">
+                  <span>Codegen + Aigrow:</span>
+                  <span className="text-blue-500 font-semibold">{breakdown.codegenAigrow}</span>
+                </div>
+              )}
+              {breakdown.ramStudios > 0 && (
+                <div className="flex justify-between">
+                  <span>Ram Studios:</span>
+                  <span className="text-orange-500 font-semibold">{breakdown.ramStudios}</span>
+                </div>
+              )}
+              {breakdown.riseTechnology > 0 && (
+                <div className="flex justify-between">
+                  <span>Rise Technology:</span>
+                  <span className="text-cyan-500 font-semibold">{breakdown.riseTechnology}</span>
+                </div>
+              )}
+              {breakdown.totalEmployees > 0 && (
+                <div className="flex justify-between border-t border-zinc-600 pt-1 mt-1">
+                  <span className="font-medium">Total Today:</span>
+                  <span className="text-purple-400 font-bold">{breakdown.totalEmployees}</span>
                 </div>
               )}
             </div>
@@ -164,18 +341,46 @@ function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Dashboard Overview</h1>
-          <p className="text-zinc-400 mt-1">
-            Welcome back, {session?.user?.name || 'User'}! 
-          </p>
+          <div className="flex items-center gap-4 mt-1">
+            <p className="text-zinc-400">
+              Welcome back, {session?.user?.name || 'User'}!
+            </p>
+            
+            {/* Auto-save status indicator */}
+            <div className="flex items-center gap-2 text-xs">
+              {isSaving && (
+                <span className="flex items-center gap-1 bg-blue-500/20 text-blue-400 px-2 py-1 rounded">
+                  <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+                  Saving...
+                </span>
+              )}
+              
+              {hasChanges && !isSaving && (
+                <span className="flex items-center gap-1 bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded">
+                  <Clock className="w-3 h-3" />
+                  Unsaved changes
+                </span>
+              )}
+              
+              {!hasChanges && !isSaving && lastSaved && (
+                <span className="flex items-center gap-1 bg-green-500/20 text-green-400 px-2 py-1 rounded">
+                  <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                  Saved {lastSaved.toLocaleTimeString()}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
-        <button 
-          onClick={fetchDashboardData}
-          disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={fetchDashboardData}
+            disabled={loading || status !== 'authenticated'}
+            className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Error Message */}
@@ -211,13 +416,13 @@ function DashboardPage() {
           rate={dashboardData.leaderAttendanceRate}
         />
         <StatCard
-          title="Today's Attendance"
+          title="Today's Total Attendance"
           value={dashboardData.todayAttendance}
           icon={Calendar}
           color="text-purple-500"
-          description="Leaders present today"
+          description="All employees present today"
           breakdown={dashboardData.todayAttendanceBreakdown}
-          rate={dashboardData.attendanceRate}
+          rate={null} // No percentage display
         />
       </div>
 
