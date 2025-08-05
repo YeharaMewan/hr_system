@@ -155,35 +155,7 @@ function DashboardPage() {
 
   const CompanyStatsCard = ({ stats }) => {
     const maxCount = Math.max(...stats.map(s => s.count || 0), 1); // Prevent division by zero
-    
-    return (
-      <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-white font-semibold">Company Labour Distribution</h3>
-          <BarChart3 className="w-5 h-5 text-zinc-400" />
-        </div>
-        <div className="space-y-3">
-          {stats.map((stat, index) => (
-            <div key={index} className="flex items-center justify-between">
-              <span className="text-zinc-300 text-sm">{stat.name}</span>
-              <div className="flex items-center gap-2">
-                <div className="w-16 bg-zinc-700 rounded-full h-2">
-                  <div 
-                    className="bg-violet-500 h-2 rounded-full transition-all duration-300"
-                    style={{ 
-                      width: `${Math.min(((stat.count || 0) / maxCount * 100), 100)}%` 
-                    }}
-                  ></div>
-                </div>
-                <span className="text-white font-semibold text-sm w-8 text-right">
-                  {stat.count || 0}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+
   };
 
   return (
@@ -266,7 +238,48 @@ function DashboardPage() {
           description="Tasks finished"
         />
       </div>
-
+      {/* Quick Actions */}
+      <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-white font-semibold">Quick Actions</h3>
+          <Activity className="w-5 h-5 text-zinc-400" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <a 
+            href="/dashboard/attendance/quickattendance"
+            className="flex items-center justify-between p-3 bg-zinc-700 hover:bg-zinc-600 rounded-lg transition-colors group"
+          >
+            <div className="flex items-center gap-3">
+              <UserCheck className="w-5 h-5 text-green-500" />
+              <span className="text-white">Mark Attendance</span>
+            </div>
+            <span className="text-zinc-400 group-hover:text-white">→</span>
+          </a>
+          
+          <a 
+            href="/dashboard/daily-task-allocation"
+            className="flex items-center justify-between p-3 bg-zinc-700 hover:bg-zinc-600 rounded-lg transition-colors group"
+          >
+            <div className="flex items-center gap-3">
+              <ClipboardList className="w-5 h-5 text-blue-500" />
+              <span className="text-white">Task Allocation</span>
+            </div>
+            <span className="text-zinc-400 group-hover:text-white">→</span>
+          </a>
+          
+          <a 
+            href="/dashboard/daily-labour-allocation"
+            className="flex items-center justify-between p-3 bg-zinc-700 hover:bg-zinc-600 rounded-lg transition-colors group"
+          >
+            <div className="flex items-center gap-3">
+              <Users className="w-5 h-5 text-purple-500" />
+              <span className="text-white">Labour Allocation</span>
+            </div>
+            <span className="text-zinc-400 group-hover:text-white">→</span>
+          </a>
+        </div>
+      </div>
+      
       {/* Company Stats and Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Attendance Status Overview */}
@@ -320,48 +333,6 @@ function DashboardPage() {
         {dashboardData.companyStats.length > 0 && (
           <CompanyStatsCard stats={dashboardData.companyStats} />
         )}
-      </div>
-
-      {/* Quick Actions */}
-      <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-white font-semibold">Quick Actions</h3>
-          <Activity className="w-5 h-5 text-zinc-400" />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <a 
-            href="/dashboard/attendance/quickattendance"
-            className="flex items-center justify-between p-3 bg-zinc-700 hover:bg-zinc-600 rounded-lg transition-colors group"
-          >
-            <div className="flex items-center gap-3">
-              <UserCheck className="w-5 h-5 text-green-500" />
-              <span className="text-white">Mark Attendance</span>
-            </div>
-            <span className="text-zinc-400 group-hover:text-white">→</span>
-          </a>
-          
-          <a 
-            href="/dashboard/daily-task-allocation"
-            className="flex items-center justify-between p-3 bg-zinc-700 hover:bg-zinc-600 rounded-lg transition-colors group"
-          >
-            <div className="flex items-center gap-3">
-              <ClipboardList className="w-5 h-5 text-blue-500" />
-              <span className="text-white">Task Allocation</span>
-            </div>
-            <span className="text-zinc-400 group-hover:text-white">→</span>
-          </a>
-          
-          <a 
-            href="/dashboard/daily-labour-allocation"
-            className="flex items-center justify-between p-3 bg-zinc-700 hover:bg-zinc-600 rounded-lg transition-colors group"
-          >
-            <div className="flex items-center gap-3">
-              <Users className="w-5 h-5 text-purple-500" />
-              <span className="text-white">Labour Allocation</span>
-            </div>
-            <span className="text-zinc-400 group-hover:text-white">→</span>
-          </a>
-        </div>
       </div>
     </div>
   );
