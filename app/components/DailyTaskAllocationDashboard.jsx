@@ -59,15 +59,20 @@ const DailyTaskAllocationDashboard = () => {
       setLoading(true);
       setError(null);
 
-      if (date === new Date().toISOString().split('T')[0]) {
-        // Today's data - fetch live data
-        await loadAllData();
+      const today = new Date().toISOString().split('T')[0];
+      if (date === today) {
+        // Today's data - fetch tasks created today with date filter
+        await loadAllData(date);
       } else {
-        // Historical data - fetch from saved records
-        await fetchHistoricalTaskData(date);
+        // Historical data - fetch tasks for specific date and fallback to saved records if needed
+        await loadAllData(date);
+        
+        // If no tasks found for the date, try to get from saved records
+        if (tasks.length === 0) {
+          await fetchHistoricalTaskData(date);
+        }
       }
     } catch (err) {
-      console.error('Error fetching task data:', err);
       setError('Failed to load task allocation data: ' + err.message);
     } finally {
       setLoading(false);
@@ -75,19 +80,20 @@ const DailyTaskAllocationDashboard = () => {
   };
 
   // Load all live data (for today)
-  const loadAllData = async () => {
+  const loadAllData = async (date = null) => {
     try {
-      await Promise.all([loadTasks(), loadUsers()]);
+      await Promise.all([loadTasks(date), loadUsers()]);
     } catch (error) {
       console.error('Error loading live data:', error);
       throw error;
     }
   };
 
-  // Load tasks with allocated labours
-  const loadTasks = async () => {
+  // Load tasks with allocated labours (filtered by date if historical)
+  const loadTasks = async (date = null) => {
     try {
-      const response = await fetch('/api/tasks');
+      const url = date ? `/api/tasks?date=${date}` : '/api/tasks';
+      const response = await fetch(url);
       const data = await response.json();
       
       if (data.success) {
@@ -124,10 +130,10 @@ const DailyTaskAllocationDashboard = () => {
       const response = await fetch(`/api/task-allocations/daily?date=${date}`);
       const data = await response.json();
       
-      if (data.success && data.record) {
+      if (data.success && data.record && data.record.taskAllocations) {
         // Convert historical data back to tasks format
         const historicalTasks = data.record.taskAllocations.map(taskAllocation => ({
-          _id: taskAllocation.taskId,
+          _id: taskAllocation.taskId || taskAllocation._id,
           title: taskAllocation.taskTitle,
           description: taskAllocation.taskDescription,
           status: taskAllocation.status,
@@ -139,7 +145,7 @@ const DailyTaskAllocationDashboard = () => {
             email: taskAllocation.assignedLeader.leaderEmail
           } : null,
           allocations: taskAllocation.allocatedLabours.map(labour => ({
-            _id: labour.allocationId,
+            _id: labour.allocationId || labour._id,
             labour: {
               _id: labour.labourId,
               name: labour.labourName,
@@ -162,8 +168,10 @@ const DailyTaskAllocationDashboard = () => {
         // No historical data found for this date
         setTasks([]);
         setUsers([]);
+        setLastSaved(null);
       }
     } catch (err) {
+      console.error('Error fetching historical task data:', err);
       throw err;
     }
   };
@@ -236,7 +244,7 @@ const DailyTaskAllocationDashboard = () => {
     if (!isToday) return;
     setShowTaskModal(false);
     setEditingTask(null);
-    loadTasks();
+    loadTasks(selectedDate); // Reload today's tasks with date filter
   };
 
   // Handle labour allocation success
@@ -245,7 +253,7 @@ const DailyTaskAllocationDashboard = () => {
     setShowLabourModal(false);
     setCurrentTaskId(null);
     setCurrentTaskTitle('');
-    loadTasks();
+    loadTasks(selectedDate); // Reload today's tasks with date filter
   };
 
   // Delete task
@@ -266,7 +274,7 @@ const DailyTaskAllocationDashboard = () => {
       const data = await response.json();
       
       if (data.success) {
-        await loadTasks();
+        await loadTasks(selectedDate); // Reload tasks for current date (including today)
         showToast('Task deleted successfully', 'success');
       } else {
         throw new Error(data.message);
@@ -294,7 +302,7 @@ const DailyTaskAllocationDashboard = () => {
       const data = await response.json();
       
       if (data.success) {
-        await loadTasks();
+        await loadTasks(selectedDate); // Reload tasks for current date (including today)
         showToast('Labour removed from task successfully', 'success');
       } else {
         throw new Error(data.message);
@@ -350,7 +358,20 @@ const DailyTaskAllocationDashboard = () => {
   const leaders = users.filter(user => user.role === 'leader');
   const labours = users.filter(user => user.role === 'labour');
 
-  // Calculate statistics
+  // Helper function to get active leaders count from tasks
+  const getActiveLeadersCount = () => {
+    if (tasks.length === 0) return 0;
+    
+    const activeLeaderIds = new Set();
+    tasks.forEach(task => {
+      if (task.assignedLeader && task.assignedLeader._id) {
+        activeLeaderIds.add(task.assignedLeader._id);
+      }
+    });
+    return activeLeaderIds.size;
+  };
+
+  // Calculate statistics based on current tasks
   const totalAllocatedLabours = tasks.reduce((total, task) => 
     total + (task.allocations ? task.allocations.length : 0), 0
   );
@@ -491,7 +512,9 @@ const DailyTaskAllocationDashboard = () => {
                 <Clock className="w-6 h-6 text-violet-400" />
               </div>
               <div className="ml-4">
-                <p className="text-zinc-400 text-sm">Total Tasks</p>
+                <p className="text-zinc-400 text-sm">
+                  {isToday ? 'Tasks Created Today' : `Tasks Created on ${new Date(selectedDate).toLocaleDateString()}`}
+                </p>
                 <p className="text-2xl font-bold text-white">{tasks.length}</p>
               </div>
             </div>
@@ -503,8 +526,10 @@ const DailyTaskAllocationDashboard = () => {
                 <Users className="w-6 h-6 text-blue-400" />
               </div>
               <div className="ml-4">
-                <p className="text-zinc-400 text-sm">Active Leaders</p>
-                <p className="text-2xl font-bold text-white">{leaders.length}</p>
+                <p className="text-zinc-400 text-sm">
+                  {isToday ? 'Active Leaders Today' : `Active Leaders on ${new Date(selectedDate).toLocaleDateString()}`}
+                </p>
+                <p className="text-2xl font-bold text-white">{getActiveLeadersCount()}</p>
               </div>
             </div>
           </div>
@@ -515,7 +540,9 @@ const DailyTaskAllocationDashboard = () => {
                 <TrendingUp className="w-6 h-6 text-green-400" />
               </div>
               <div className="ml-4">
-                <p className="text-zinc-400 text-sm">Allocated Labours</p>
+                <p className="text-zinc-400 text-sm">
+                  {isToday ? 'Labours Allocated Today' : `Labours Allocated on ${new Date(selectedDate).toLocaleDateString()}`}
+                </p>
                 <p className="text-2xl font-bold text-white">{totalAllocatedLabours}</p>
               </div>
             </div>
@@ -527,7 +554,9 @@ const DailyTaskAllocationDashboard = () => {
                 <CheckCircle2 className="w-6 h-6 text-yellow-400" />
               </div>
               <div className="ml-4">
-                <p className="text-zinc-400 text-sm">Completed Tasks</p>
+                <p className="text-zinc-400 text-sm">
+                  {isToday ? 'Tasks Completed Today' : `Tasks Completed on ${new Date(selectedDate).toLocaleDateString()}`}
+                </p>
                 <p className="text-2xl font-bold text-white">{completedTasks}</p>
               </div>
             </div>
@@ -557,14 +586,20 @@ const DailyTaskAllocationDashboard = () => {
 
         {/* Tasks Table */}
         <div className="bg-zinc-900 rounded-lg overflow-hidden border border-zinc-800">
-          <div className="p-6 border-b border-zinc-800">
-            <h2 className="text-xl font-bold text-white flex items-center">
-              <BarChart3 className="w-6 h-6 mr-2 text-violet-400" />
-              Task Allocations ({new Date(selectedDate).toLocaleDateString()})
-            </h2>
-          </div>
-          
-          <div className="overflow-x-auto">
+            <div className="p-6 border-b border-zinc-800">
+              <h2 className="text-xl font-bold text-white flex items-center">
+                <BarChart3 className="w-6 h-6 mr-2 text-violet-400" />
+                {isToday 
+                  ? 'Tasks Created Today' 
+                  : `Tasks Created on ${new Date(selectedDate).toLocaleDateString()}`
+                }
+              </h2>
+              {!isToday && (
+                <p className="text-sm text-zinc-400 mt-2">
+                  Showing tasks that were created on {new Date(selectedDate).toLocaleDateString()}
+                </p>
+              )}
+            </div>          <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-zinc-800 border-b border-zinc-700">
                 <tr>
@@ -597,17 +632,20 @@ const DailyTaskAllocationDashboard = () => {
                       <div className="text-zinc-400">
                         <Calendar className="w-12 h-12 mx-auto mb-4 text-zinc-600" />
                         <p className="text-lg font-medium mb-2">
-                          {isToday ? 'No tasks found' : 'No data available for this date'}
+                          {isToday ? 'No tasks found for today' : `No tasks created on ${new Date(selectedDate).toLocaleDateString()}`}
                         </p>
                         <p className="text-sm">
-                          {isToday ? 'Create your first task to get started' : 'No task allocation data was saved for this date'}
+                          {isToday 
+                            ? 'Create your first task to get started' 
+                            : 'No tasks were created on this date. Try selecting a different date or create new tasks for today.'
+                          }
                         </p>
                       </div>
                     </td>
                   </tr>
                 ) : (
-                  tasks.map((task) => (
-                    <tr key={task._id} className="hover:bg-zinc-800/50 transition-colors">
+                  tasks.map((task, taskIndex) => (
+                    <tr key={task._id || `task-${taskIndex}`} className="hover:bg-zinc-800/50 transition-colors">
                       {/* Status Column */}
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getStatusStyle(task.status)}`}>
@@ -640,8 +678,8 @@ const DailyTaskAllocationDashboard = () => {
                       <td className="px-6 py-4">
                         <div className="flex flex-wrap gap-1 max-w-xs">
                           {task.allocations && task.allocations.length > 0 ? (
-                            task.allocations.map((allocation) => (
-                              <div key={allocation._id} className="bg-zinc-800 border border-zinc-700 px-2 py-1 rounded text-xs flex items-center">
+                            task.allocations.map((allocation, index) => (
+                              <div key={allocation._id || `${task._id}-allocation-${index}`} className="bg-zinc-800 border border-zinc-700 px-2 py-1 rounded text-xs flex items-center">
                                 <span className="text-zinc-300">{allocation.labour?.name || 'Unknown'}</span>
                                 <span className="ml-1 text-zinc-500">
                                   ({allocation.labour?.skills?.join(', ') || 'General'})

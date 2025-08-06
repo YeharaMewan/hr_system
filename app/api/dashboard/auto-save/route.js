@@ -162,9 +162,8 @@ export async function POST(request) {
     });
 
   } catch (error) {
-    console.error("❌ Error in auto-save:", error);
     return NextResponse.json(
-      { message: "Auto-save failed", error: error.message },
+      { message: "Auto-save failed" },
       { status: 500 }
     );
   }
@@ -201,7 +200,6 @@ export async function GET(request) {
     });
 
   } catch (error) {
-    console.error("❌ Error checking auto-save status:", error);
     return NextResponse.json(
       { message: "Failed to check auto-save status" },
       { status: 500 }

@@ -169,7 +169,7 @@ TaskAllocationRecordSchema.statics.getTodaysRecord = async function(userId) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   
-  let record = await this.findOne({ date: today, createdBy: userId });
+  let record = await this.findOne({ date: today });
   
   if (!record) {
     record = new this({

@@ -102,21 +102,15 @@ const LabourAllocationDashboard = () => {
   // ✅ ALTERNATIVE: Create a dedicated function to fetch leaders with attendance
   const fetchLeadersWithAttendance = async () => {
     try {
-      console.log('🎯 Fetching leaders with attendance status...');
-      
-      // Create dedicated API endpoint call
       const response = await fetch('/api/labour-allocation/leaders-status');
       const data = await response.json();
       
       if (data.success) {
-        console.log('✅ Leaders with attendance fetched:', data.leaders);
         return data.leaders;
       } else {
         throw new Error(data.message || 'Failed to fetch leaders attendance');
       }
     } catch (err) {
-      console.error('❌ Error fetching leaders attendance:', err);
-      // Fallback to original method
       return null;
     }
   };

@@ -83,8 +83,7 @@ export async function POST(request) {
     // Create or update the record
     const record = await TaskAllocationRecord.findOneAndUpdate(
       { 
-        date: targetDate,
-        createdBy: userId 
+        date: targetDate
       },
       recordData,
       {
@@ -107,9 +106,8 @@ export async function POST(request) {
     });
 
   } catch (error) {
-    console.error("Error saving daily task allocation:", error);
     return NextResponse.json(
-      { message: "Server error occurred", error: error.message },
+      { message: "Server error occurred", success: false },
       { status: 500 }
     );
   }
@@ -154,43 +152,29 @@ export async function GET(request) {
         success: true
       });
     } else {
-      // Get historical records with pagination
-      const skip = (page - 1) * limit;
-      
-      const query = {};
-      if (date && date !== 'all') {
-        const targetDate = new Date(date);
-        targetDate.setHours(0, 0, 0, 0);
-        query.date = targetDate;
-      }
+      // Get historical record for specific date
+      const targetDate = new Date(date);
+      targetDate.setHours(0, 0, 0, 0);
 
-      const [records, total] = await Promise.all([
-        TaskAllocationRecord.find(query)
-          .populate('createdBy', 'name email')
-          .populate('updatedBy', 'name email')
-          .sort({ date: -1 })
-          .skip(skip)
-          .limit(limit)
-          .lean(),
-        TaskAllocationRecord.countDocuments(query)
-      ]);
+      const record = await TaskAllocationRecord.findOne({ 
+        date: targetDate 
+      })
+      .populate('createdBy', 'name email')
+      .populate('updatedBy', 'name email')
+      .populate('taskAllocations.taskId')
+      .populate('taskAllocations.assignedLeader.leaderId', 'name email')
+      .populate('taskAllocations.allocatedLabours.labourId', 'name email skills')
+      .lean();
 
       return NextResponse.json({
-        records: records,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit)
-        },
+        record: record,
         success: true
       });
     }
 
   } catch (error) {
-    console.error("Error fetching daily task allocation:", error);
     return NextResponse.json(
-      { message: "Server error occurred", error: error.message },
+      { message: "Server error occurred", success: false },
       { status: 500 }
     );
   }

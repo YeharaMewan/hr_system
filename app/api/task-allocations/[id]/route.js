@@ -45,9 +45,8 @@ export async function DELETE(request, context) {
     });
 
   } catch (error) {
-    console.error("Error removing labour allocation:", error);
     return NextResponse.json(
-      { message: "Server error occurred", error: error.message },
+      { message: "Server error occurred" },
       { status: 500 }
     );
   }

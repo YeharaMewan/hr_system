@@ -69,9 +69,8 @@ export async function POST(request) {
     });
 
   } catch (error) {
-    console.error("Error saving company stats:", error);
     return NextResponse.json(
-      { message: "Server error occurred", error: error.message },
+      { message: "Server error occurred" },
       { status: 500 }
     );
   }
@@ -124,9 +123,8 @@ export async function GET(request) {
     });
 
   } catch (error) {
-    console.error("Error fetching company stats:", error);
     return NextResponse.json(
-      { message: "Server error occurred", error: error.message },
+      { message: "Server error occurred" },
       { status: 500 }
     );
   }

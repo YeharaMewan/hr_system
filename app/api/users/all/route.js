@@ -29,33 +29,18 @@ export async function GET(request) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    // ✅ MAIN FIX: Use correct field name 'userId' from Attendance model
     const todayAttendance = await Attendance.find({
-      userId: { $in: users.map(u => u._id) }, // Fixed: 'employee' -> 'userId'
+      userId: { $in: users.map(u => u._id) },
       date: today
     }).lean();
-
-    console.log('📅 Attendance Query Debug:', {
-      todayDate: today,
-      totalUsers: users.length,
-      attendanceRecordsFound: todayAttendance.length,
-      attendanceUserIds: todayAttendance.map(a => a.userId.toString())
-    });
 
     // Map attendance to users with proper field mapping
     const usersWithStatus = users.map(user => {
       const attendance = todayAttendance.find(
-        att => att.userId.toString() === user._id.toString() // Fixed: 'employee' -> 'userId'
+        att => att.userId.toString() === user._id.toString()
       );
       
       const finalStatus = attendance?.status || 'Not Marked';
-      
-      console.log(`👤 ${user.name} (${user.role}):`, {
-        userId: user._id.toString(),
-        hasAttendance: !!attendance,
-        attendanceStatus: attendance?.status,
-        finalStatus: finalStatus
-      });
       
       return {
         ...user,
@@ -66,18 +51,12 @@ export async function GET(request) {
 
     return NextResponse.json({
       users: usersWithStatus,
-      success: true,
-      debug: {
-        totalUsers: users.length,
-        attendanceRecords: todayAttendance.length,
-        date: today
-      }
+      success: true
     });
 
   } catch (error) {
-    console.error("❌ Error fetching users:", error);
     return NextResponse.json(
-      { message: "Server error occurred", error: error.message },
+      { message: "Server error occurred" },
       { status: 500 }
     );
   }

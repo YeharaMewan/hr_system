@@ -37,7 +37,6 @@ export const authOptions = {
             _id: user._id.toString() // Keep both for compatibility
           };
         } catch (error) {
-          console.log("Error: ", error);
           return null;
         }
       },

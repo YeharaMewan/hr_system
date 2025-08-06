@@ -19,8 +19,29 @@ export async function GET(request) {
 
     await connectMongoDB();
 
-    // Get all tasks with populated data
-    const tasks = await Task.find({})
+    // Get query parameters
+    const { searchParams } = new URL(request.url);
+    const date = searchParams.get('date');
+    
+    let query = {};
+    
+    // If date is provided, filter tasks by creation date
+    if (date) {
+      const targetDate = new Date(date);
+      const startOfDay = new Date(targetDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      
+      const endOfDay = new Date(targetDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      
+      query.createdAt = {
+        $gte: startOfDay,
+        $lte: endOfDay
+      };
+    }
+
+    // Get all tasks with populated data and date filter
+    const tasks = await Task.find(query)
       .populate('assignedLeader', 'name email role')
       .populate('createdBy', 'name email')
       .sort({ createdAt: -1 })
@@ -46,9 +67,8 @@ export async function GET(request) {
     });
 
   } catch (error) {
-    console.error("Error fetching tasks:", error);
     return NextResponse.json(
-      { message: "Server error occurred", error: error.message },
+      { message: "Server error occurred", success: false },
       { status: 500 }
     );
   }
@@ -115,9 +135,8 @@ export async function POST(request) {
     }, { status: 201 });
 
   } catch (error) {
-    console.error("Error creating task:", error);
     return NextResponse.json(
-      { message: "Server error occurred", error: error.message },
+      { message: "Server error occurred", success: false },
       { status: 500 }
     );
   }

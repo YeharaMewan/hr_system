@@ -28,6 +28,8 @@ const DailyLabourAllocationDashboard = () => {
     { name: 'Ram studios', count: 0, editable: true },
     { name: 'Rise Technology', count: 0, editable: true }
   ]);
+  const [totalLabourCount, setTotalLabourCount] = useState(0);
+  const [totalCompanyEmployees, setTotalCompanyEmployees] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [editingStats, setEditingStats] = useState({});
@@ -72,15 +74,9 @@ const DailyLabourAllocationDashboard = () => {
       setLoading(true);
       setError(null);
 
-      if (date === new Date().toISOString().split('T')[0]) {
-        // Today's data - fetch live data
-        await fetchLiveLabourData();
-      } else {
-        // Historical data - fetch from saved records
-        await fetchHistoricalLabourData(date);
-      }
+      // Always fetch data for the selected date - no special case for "today"
+      await fetchHistoricalLabourData(date);
     } catch (err) {
-      console.error('Error fetching labour data:', err);
       setError('Failed to load labour allocation data: ' + err.message);
     } finally {
       setLoading(false);
@@ -90,13 +86,12 @@ const DailyLabourAllocationDashboard = () => {
   // Fetch live labour data (today's data)
   const fetchLiveLabourData = async () => {
     try {
-      // Fetch tasks with allocations
-      const tasksResponse = await fetch('/api/tasks');
+      // Fetch tasks with allocations for selected date
+      const tasksResponse = await fetch(`/api/tasks?date=${selectedDate}`);
       const tasksData = await tasksResponse.json();
       
-      // Get today's attendance data for leaders
-      const today = new Date().toISOString().split('T')[0];
-      const attendanceResponse = await fetch(`/api/attendance/daily?date=${today}`);
+      // Get attendance data for leaders for selected date
+      const attendanceResponse = await fetch(`/api/attendance/daily?date=${selectedDate}`);
       const attendanceData = await attendanceResponse.json();
       
       if (tasksData.success && attendanceData.success) {
@@ -134,6 +129,14 @@ const DailyLabourAllocationDashboard = () => {
         leaderLabourCount.sort((a, b) => a.name.localeCompare(b.name));
         setLabourData(leaderLabourCount);
         
+        // Calculate and set total labour count
+        const totalLabour = leaderLabourCount.reduce((total, leader) => total + leader.labourCount, 0);
+        setTotalLabourCount(totalLabour);
+        
+        // Calculate total company employees based on current company stats
+        const companyTotal = companyStats.reduce((total, stat) => total + stat.count, 0);
+        setTotalCompanyEmployees(totalLabour + companyTotal + leaderLabourCount.length);
+        
       } else {
         throw new Error(tasksData.message || attendanceData.message || 'Failed to fetch live data');
       }
@@ -153,7 +156,11 @@ const DailyLabourAllocationDashboard = () => {
       const attendanceResponse = await fetch(`/api/attendance/daily?date=${date}`);
       const attendanceData = await attendanceResponse.json();
       
-      if (labourData.success && labourData.record) {
+      // Get tasks for the specific date
+      const tasksResponse = await fetch(`/api/tasks?date=${date}`);
+      const tasksData = await tasksResponse.json();
+      
+      if (labourData.success && labourData.record && labourData.record.leaderAllocations) {
         // If we have saved labour allocation data, use it
         const historicalLabourData = labourData.record.leaderAllocations.map(allocation => {
           // Find corresponding attendance data for this leader
@@ -164,7 +171,7 @@ const DailyLabourAllocationDashboard = () => {
           return {
             id: allocation.leaderId,
             name: allocation.leaderName,
-            email: allocation.leaderId?.email || 'N/A',
+            email: 'N/A', // Historical data might not have email
             labourCount: allocation.labourCount,
             tasksCount: allocation.tasksCount,
             attendanceStatus: attendanceRecord ? attendanceRecord.attendanceStatus : (allocation.attendanceStatus || 'Not Marked')
@@ -178,12 +185,104 @@ const DailyLabourAllocationDashboard = () => {
           setCompanyStats(labourData.record.companyStats);
         }
         
+        // Calculate totals - use actual present labour count if available
+        if (labourData.record.calculatedValues && labourData.record.calculatedValues.actualPresentLabourCount) {
+          setTotalLabourCount(labourData.record.calculatedValues.actualPresentLabourCount);
+        } else {
+          // Fallback to historical calculation
+          const totalLabour = historicalLabourData.reduce((total, leader) => total + leader.labourCount, 0);
+          setTotalLabourCount(totalLabour);
+        }
+        
+        // Set company employees total if available
+        if (labourData.record.calculatedValues) {
+          setTotalCompanyEmployees(labourData.record.calculatedValues.totalCompanyEmployees || 0);
+        } else if (labourData.record.companyStats) {
+          // Fallback calculation from companyStats - use proper calculation
+          const codegenCount = labourData.record.companyStats[0]?.count || 0;
+          const ramCount = labourData.record.companyStats[1]?.count || 0;
+          const riseCount = labourData.record.companyStats[2]?.count || 0;
+          const workingLeaders = historicalLabourData.filter(leader => 
+            ['Present', 'Work from home', 'Work from out of Rise'].includes(leader.attendanceStatus)
+          ).length;
+          const actualLabourCount = labourData.record.calculatedValues?.actualPresentLabourCount || 
+                                  historicalLabourData.reduce((total, leader) => total + leader.labourCount, 0);
+          const theRiseTotalCalc = actualLabourCount + codegenCount + workingLeaders;
+          const totalCompanyCalc = theRiseTotalCalc + ramCount + riseCount;
+          setTotalCompanyEmployees(totalCompanyCalc);
+        }
+        
         // Set last saved time
         if (labourData.record.updatedAt) {
           setLastSaved(new Date(labourData.record.updatedAt));
         }
+        
+      } else if (tasksData.success && attendanceData.success) {
+        // If no saved labour allocation but we have live tasks and attendance data, 
+        // calculate labour allocation from current tasks
+        const leaders = attendanceData.leaders;
+        
+        // Get actual labour attendance for the selected date
+        const labourResponse = await fetch(`/api/users/labours?date=${date}`);
+        const labourAttendanceData = await labourResponse.json();
+        
+        const calculatedLabourData = leaders.map(leader => {
+          const leaderTasks = tasksData.tasks.filter(task => {
+            if (task.assignedLeader && task.assignedLeader._id) {
+              return task.assignedLeader._id === leader._id;
+            }
+            if (task.leader && task.leader._id) {
+              return task.leader._id === leader._id;
+            }
+            return task.assignedLeader === leader._id || task.leader === leader._id;
+          });
+          
+          // Calculate labour count based on task allocations
+          const totalLabours = leaderTasks.reduce((count, task) => {
+            if (task.allocations && Array.isArray(task.allocations)) {
+              return count + task.allocations.length;
+            }
+            return count;
+          }, 0);
+          
+          return {
+            id: leader._id,
+            name: leader.name,
+            email: leader.email,
+            labourCount: totalLabours,
+            tasksCount: leaderTasks.length,
+            attendanceStatus: leader.attendanceStatus || 'Not Marked'
+          };
+        });
+        
+        calculatedLabourData.sort((a, b) => a.name.localeCompare(b.name));
+        setLabourData(calculatedLabourData);
+        
+        // Use actual present labour count instead of calculated from task allocations
+        if (labourAttendanceData.success) {
+          setTotalLabourCount(labourAttendanceData.presentLabourCount);
+        } else {
+          // Fallback to calculated count
+          const totalLabour = calculatedLabourData.reduce((total, leader) => total + leader.labourCount, 0);
+          setTotalLabourCount(totalLabour);
+        }
+        
+        // Calculate total company employees based on actual present labour count
+        const codegenCount = companyStats[0]?.count || 0;
+        const ramCount = companyStats[1]?.count || 0; 
+        const riseCount = companyStats[2]?.count || 0;
+        const workingLeaders = calculatedLabourData.filter(leader => 
+          ['Present', 'Work from home', 'Work from out of Rise'].includes(leader.attendanceStatus)
+        ).length;
+        
+        // Get actual labour count from API response
+        const actualLabourCount = labourAttendanceData.success ? labourAttendanceData.presentLabourCount : 0;
+        const theRiseTotalCalc = actualLabourCount + codegenCount + workingLeaders;
+        const totalCompanyCalc = theRiseTotalCalc + ramCount + riseCount;
+        setTotalCompanyEmployees(totalCompanyCalc);
+        
       } else if (attendanceData.success && attendanceData.leaders) {
-        // If no saved labour allocation but we have attendance data, 
+        // If no saved labour allocation and no tasks but we have attendance data, 
         // create basic structure with attendance status
         const basicLabourData = attendanceData.leaders.map(leader => ({
           id: leader._id,
@@ -195,19 +294,25 @@ const DailyLabourAllocationDashboard = () => {
         }));
         
         setLabourData(basicLabourData);
+        setTotalLabourCount(0);
+        setTotalCompanyEmployees(0);
         setCompanyStats([
-          { name: 'Codegen + Aigrow staff\'s', count: 0, editable: true },
-          { name: 'Ram studios', count: 0, editable: true },
-          { name: 'Rise Technology', count: 0, editable: true }
+          { name: 'Codegen + Aigrow staff\'s', count: 0, editable: false },
+          { name: 'Ram studios', count: 0, editable: false },
+          { name: 'Rise Technology', count: 0, editable: false }
         ]);
+        
       } else {
         // No data found for this date
         setLabourData([]);
+        setTotalLabourCount(0);
+        setTotalCompanyEmployees(0);
         setCompanyStats([
-          { name: 'Codegen + Aigrow staff\'s', count: 0, editable: true },
-          { name: 'Ram studios', count: 0, editable: true },
-          { name: 'Rise Technology', count: 0, editable: true }
+          { name: 'Codegen + Aigrow staff\'s', count: 0, editable: false },
+          { name: 'Ram studios', count: 0, editable: false },
+          { name: 'Rise Technology', count: 0, editable: false }
         ]);
+        
       }
     } catch (err) {
       throw err;
@@ -217,33 +322,31 @@ const DailyLabourAllocationDashboard = () => {
   // Load saved company stats from API for specific date
   const loadCompanyStats = async (date = null) => {
     try {
-      const targetDate = date || new Date().toISOString().split('T')[0];
+      const targetDate = date || selectedDate;
       
-      // If it's today, get the latest company stats
-      if (targetDate === new Date().toISOString().split('T')[0]) {
-        const response = await fetch('/api/labour-allocation/company-stats');
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.stats) {
-            setCompanyStats(data.stats);
-            if (data.record) {
-              setLastSaved(new Date(data.record.updatedAt));
-            }
-            return;
+      // Get company stats for the selected date
+      const response = await fetch(`/api/labour-allocation/company-stats?date=${targetDate}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.stats) {
+          setCompanyStats(data.stats);
+          if (data.record) {
+            setLastSaved(new Date(data.record.updatedAt));
           }
+          return;
         }
-      } else {
-        // For historical dates, try to get saved labour allocation record
-        const response = await fetch(`/api/labour-allocation/daily?date=${targetDate}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.record && data.record.companyStats) {
-            setCompanyStats(data.record.companyStats);
-            if (data.record.updatedAt) {
-              setLastSaved(new Date(data.record.updatedAt));
-            }
-            return;
+      }
+      
+      // If no data found for the date, try to get from daily labour allocation record
+      const dailyResponse = await fetch(`/api/labour-allocation/daily?date=${targetDate}`);
+      if (dailyResponse.ok) {
+        const dailyData = await dailyResponse.json();
+        if (dailyData.success && dailyData.record && dailyData.record.companyStats) {
+          setCompanyStats(dailyData.record.companyStats);
+          if (dailyData.record.updatedAt) {
+            setLastSaved(new Date(dailyData.record.updatedAt));
           }
+          return;
         }
       }
       
@@ -255,7 +358,6 @@ const DailyLabourAllocationDashboard = () => {
       ]);
       
     } catch (err) {
-      console.error('Error loading company stats:', err);
       // Fallback to default values
       setCompanyStats([
         { name: 'Codegen + Aigrow staff\'s', count: 0, editable: true },
@@ -307,17 +409,25 @@ const DailyLabourAllocationDashboard = () => {
       const attendanceResponse = await fetch(`/api/attendance/daily?date=${today}`);
       const attendanceData = await attendanceResponse.json();
       
+      // Get actual labour attendance count
+      const labourResponse = await fetch(`/api/users/labours?date=${today}`);
+      const labourAttendanceData = await labourResponse.json();
+      
+      // Use actual present labour count instead of calculated
+      const actualPresentLabourCount = labourAttendanceData.success ? labourAttendanceData.presentLabourCount : totalLabourCount;
+      
       const dataToSave = {
         labourData: labourData,
         companyStats: companyStats,
         calculatedValues: {
-          totalLabourCount,
+          totalLabourCount: actualPresentLabourCount, // Use actual present count
           theRiseTotalEmployees,
-          totalCompanyEmployees,
+          totalCompanyEmployees: calculatedTotalCompanyEmployees,
           workingLeaderCount,
           codegenStaffCount,
           ramStudiosCount,
-          riseTechnologyCount
+          riseTechnologyCount,
+          actualPresentLabourCount // Store the actual count separately too
         },
         date: selectedDate,
         // Include attendance data for proper historical tracking
@@ -358,8 +468,6 @@ const DailyLabourAllocationDashboard = () => {
   };
 
   // Calculate metrics
-  const totalLabourCount = labourData.reduce((total, leader) => total + leader.labourCount, 0);
-  
   const calculateWorkingLeaderCount = () => {
     const workingStatuses = ['Present', 'Work from home', 'Work from out of Rise'];
     return labourData.filter(leader => 
@@ -372,7 +480,7 @@ const DailyLabourAllocationDashboard = () => {
   const theRiseTotalEmployees = totalLabourCount + codegenStaffCount + workingLeaderCount;
   const ramStudiosCount = companyStats[1]?.count || 0;
   const riseTechnologyCount = companyStats[2]?.count || 0;
-  const totalCompanyEmployees = theRiseTotalEmployees + ramStudiosCount + riseTechnologyCount;
+  const calculatedTotalCompanyEmployees = theRiseTotalEmployees + ramStudiosCount + riseTechnologyCount;
 
   // Date navigation functions
   const goToPreviousDay = () => {
@@ -403,6 +511,17 @@ const DailyLabourAllocationDashboard = () => {
     const updatedStats = [...companyStats];
     updatedStats[index].count = parseInt(newCount) || 0;
     setCompanyStats(updatedStats);
+    
+    // Update total company employees when stats change - use correct calculation
+    // Total Company Employees = The Rise Total + Ram Studios + Rise Technology
+    const codegenCount = updatedStats[0]?.count || 0;
+    const ramCount = updatedStats[1]?.count || 0;
+    const riseCount = updatedStats[2]?.count || 0;
+    const theRiseTotalCalc = totalLabourCount + codegenCount + labourData.filter(leader => 
+      ['Present', 'Work from home', 'Work from out of Rise'].includes(leader.attendanceStatus)
+    ).length;
+    const totalCompanyCalc = theRiseTotalCalc + ramCount + riseCount;
+    setTotalCompanyEmployees(totalCompanyCalc);
   };
 
   // Handle editing company stats
@@ -436,6 +555,22 @@ const DailyLabourAllocationDashboard = () => {
 
     return () => clearTimeout(timeoutId);
   }, [companyStats, isToday]);
+
+  // Recalculate total company employees when stats change
+  useEffect(() => {
+    if (isToday) {
+      // Use the correct calculation: The Rise Total + Ram Studios + Rise Technology
+      const codegenCount = companyStats[0]?.count || 0;
+      const ramCount = companyStats[1]?.count || 0;
+      const riseCount = companyStats[2]?.count || 0;
+      const workingLeaders = labourData.filter(leader => 
+        ['Present', 'Work from home', 'Work from out of Rise'].includes(leader.attendanceStatus)
+      ).length;
+      const theRiseTotalCalc = totalLabourCount + codegenCount + workingLeaders;
+      const totalCompanyCalc = theRiseTotalCalc + ramCount + riseCount;
+      setTotalCompanyEmployees(totalCompanyCalc);
+    }
+  }, [companyStats, totalLabourCount, labourData, isToday]);
 
   if (loading) {
     return (
@@ -657,13 +792,13 @@ const DailyLabourAllocationDashboard = () => {
                     {labourData.length === 0 ? (
                       <tr>
                         <td colSpan="2" className="text-center py-8 text-zinc-400">
-                          {isToday ? 'No leaders found or no tasks allocated' : 'No data available for this date'}
+                          {isToday ? 'No leaders found or no tasks allocated' : `No data available for ${new Date(selectedDate).toLocaleDateString()}. Try checking another date or save today's data first.`}
                         </td>
                       </tr>
                     ) : (
                       labourData.map((leader, index) => (
                         <tr 
-                          key={leader.id || index} 
+                          key={leader.id || `leader-${index}-${selectedDate}`} 
                           className={`border-b border-zinc-700/50 hover:bg-zinc-800/50 transition-colors ${
                             leader.labourCount === 0 ? 'bg-red-900/20' : ''
                           }`}

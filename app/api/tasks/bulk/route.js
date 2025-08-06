@@ -41,7 +41,7 @@ export async function POST(request) {
       );
     }
 
-    console.log('Creating tasks with userId:', userId); // Debug log
+
 
     // Process each task
     for (let i = 0; i < tasks.length; i++) {
@@ -60,11 +60,6 @@ export async function POST(request) {
           createdBy: userId, // Use the corrected user ID
           status: 'Pending'
         });
-
-        console.log('Attempting to save task:', {
-          title: newTask.title,
-          createdBy: newTask.createdBy
-        }); // Debug log
 
         const savedTask = await newTask.save();
 
@@ -89,7 +84,6 @@ export async function POST(request) {
         createdTasks.push(populatedTask);
 
       } catch (error) {
-        console.error(`Error creating task ${i + 1}:`, error);
         errors.push({
           taskIndex: i + 1,
           error: error.message,
@@ -123,12 +117,9 @@ export async function POST(request) {
     }, { status: 201 });
 
   } catch (error) {
-    console.error("Error in bulk task creation:", error);
     return NextResponse.json(
       { 
-        message: "Server error occurred", 
-        error: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        message: "Server error occurred"
       },
       { status: 500 }
     );

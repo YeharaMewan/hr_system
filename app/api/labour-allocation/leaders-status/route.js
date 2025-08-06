@@ -64,9 +64,8 @@ export async function GET(request) {
     });
 
   } catch (error) {
-    console.error("Error fetching leaders status:", error);
     return NextResponse.json(
-      { message: "Server error occurred", error: error.message },
+      { message: "Server error occurred" },
       { status: 500 }
     );
   }

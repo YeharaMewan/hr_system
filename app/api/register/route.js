@@ -31,7 +31,6 @@ export async function POST(req) {
       role: userRole 
     }, { status: 201 });
   } catch (error) {
-    console.error("Registration error:", error);
     return NextResponse.json(
       { message: "පරිශීලකයා ලියාපදිංචි කිරීමේදී දෝෂයක් ඇතිවිය." },
       { status: 500 }

@@ -78,9 +78,8 @@ export async function POST(request) {
     }, { status: 201 });
 
   } catch (error) {
-    console.error("Error creating task allocations:", error);
     return NextResponse.json(
-      { message: "Server error occurred", error: error.message },
+      { message: "Server error occurred" },
       { status: 500 }
     );
   }

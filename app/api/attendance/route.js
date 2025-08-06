@@ -53,7 +53,6 @@ export async function GET(request) {
 
     return NextResponse.json({ success: true, data: staffWithAttendance });
   } catch (error) {
-    console.error("API Error in GET /api/attendance:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
@@ -81,7 +80,6 @@ export async function PUT(request) {
             return NextResponse.json({ success: true, data: updatedAttendance });
         }
     } catch (error) {
-        console.error("API Error in PUT /api/attendance:", error.message);
         return NextResponse.json({ success: false, error: "A database error occurred." }, { status: 500 });
     }
 }
