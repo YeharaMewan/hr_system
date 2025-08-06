@@ -1,24 +1,22 @@
 // app/components/ui/Toast.jsx
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { CheckCircle, AlertCircle, X, Info, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, createContext, useContext } from 'react';
+import { CheckCircle, AlertCircle, Info, X } from 'lucide-react';
 
-const Toast = ({ 
-  message, 
-  type = 'success', 
-  isVisible = false, 
-  onClose,
+const Toast = ({
+  message,
+  type = 'success',
+  isVisible = false,
   duration = 4000,
+  onClose,
   position = 'top-right'
 }) => {
-  const [show, setShow] = useState(false);
   const [animate, setAnimate] = useState(false);
 
   useEffect(() => {
     if (isVisible) {
-      setShow(true);
-      setTimeout(() => setAnimate(true), 10);
+      setAnimate(true);
       
       if (duration > 0) {
         const timer = setTimeout(() => {
@@ -27,20 +25,17 @@ const Toast = ({
         
         return () => clearTimeout(timer);
       }
-    } else {
-      handleClose();
     }
   }, [isVisible, duration]);
 
   const handleClose = () => {
     setAnimate(false);
     setTimeout(() => {
-      setShow(false);
       if (onClose) onClose();
     }, 300);
   };
 
-  if (!show) return null;
+  if (!isVisible) return null;
 
   const getIcon = () => {
     switch (type) {
@@ -49,43 +44,41 @@ const Toast = ({
       case 'error':
         return <AlertCircle className="w-5 h-5 text-red-400" />;
       case 'warning':
-        return <AlertTriangle className="w-5 h-5 text-yellow-400" />;
+        return <AlertCircle className="w-5 h-5 text-yellow-400" />;
       case 'info':
         return <Info className="w-5 h-5 text-blue-400" />;
       default:
-        return <CheckCircle className="w-5 h-5 text-green-400" />;
+        return <Info className="w-5 h-5 text-blue-400" />;
     }
   };
 
   const getStyles = () => {
-    const baseStyles = "border backdrop-blur-sm shadow-2xl";
-    
     switch (type) {
       case 'success':
-        return `${baseStyles} bg-green-900/90 border-green-500/30 text-green-100`;
+        return 'bg-green-900/90 border border-green-500/50 text-green-100';
       case 'error':
-        return `${baseStyles} bg-red-900/90 border-red-500/30 text-red-100`;
+        return 'bg-red-900/90 border border-red-500/50 text-red-100';
       case 'warning':
-        return `${baseStyles} bg-yellow-900/90 border-yellow-500/30 text-yellow-100`;
+        return 'bg-yellow-900/90 border border-yellow-500/50 text-yellow-100';
       case 'info':
-        return `${baseStyles} bg-blue-900/90 border-blue-500/30 text-blue-100`;
+        return 'bg-blue-900/90 border border-blue-500/50 text-blue-100';
       default:
-        return `${baseStyles} bg-green-900/90 border-green-500/30 text-green-100`;
+        return 'bg-zinc-800 border border-zinc-600 text-white';
     }
   };
 
   const getPositionStyles = () => {
     switch (position) {
-      case 'top-center':
-        return 'top-4 left-1/2 transform -translate-x-1/2';
       case 'top-left':
         return 'top-4 left-4';
+      case 'top-center':
+        return 'top-4 left-1/2 transform -translate-x-1/2';
       case 'top-right':
         return 'top-4 right-4';
-      case 'bottom-center':
-        return 'bottom-4 left-1/2 transform -translate-x-1/2';
       case 'bottom-left':
         return 'bottom-4 left-4';
+      case 'bottom-center':
+        return 'bottom-4 left-1/2 transform -translate-x-1/2';
       case 'bottom-right':
         return 'bottom-4 right-4';
       default:
@@ -153,7 +146,7 @@ export const ToastProvider = ({ children }) => {
       {children}
       {toasts.map((toast) => (
         <Toast
-          key={toast.id}
+          key={toast.id} // ✅ Fixed: Using unique toast.id as key
           message={toast.message}
           type={toast.type}
           isVisible={true}
@@ -167,8 +160,6 @@ export const ToastProvider = ({ children }) => {
 };
 
 // Context for using toasts
-import { createContext, useContext } from 'react';
-
 const ToastContext = createContext(null);
 
 export const useToast = () => {

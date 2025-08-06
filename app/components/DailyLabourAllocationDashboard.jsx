@@ -873,7 +873,7 @@ const DailyLabourAllocationDashboard = () => {
                     {labourData && labourData.length > 0 ? (
                       labourData.map((leader, index) => (
                         <tr 
-                          key={leader.id || `leader-${index}-${selectedDate}`} 
+                          key={leader.id || leader._id || `leader-${index}-${selectedDate}`} 
                           className={`border-b border-zinc-700/50 hover:bg-zinc-800/50 transition-colors ${
                             leader.labourCount === 0 ? 'bg-red-900/20' : ''
                           }`}
@@ -1054,7 +1054,7 @@ const DailyLabourAllocationDashboard = () => {
                       const actualIndex = index + 1;
                       return (
                         <tr 
-                          key={actualIndex} 
+                          key={stat.name || `company-stat-${actualIndex}`} 
                           className="border-b border-zinc-700/50 hover:bg-zinc-800/50 transition-colors"
                         >
                           <td className="py-3 px-4">
