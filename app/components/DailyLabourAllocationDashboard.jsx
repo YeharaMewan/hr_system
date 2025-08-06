@@ -37,11 +37,7 @@ const DailyLabourAllocationDashboard = () => {
   const [lastSaved, setLastSaved] = useState(null);
   const [isToday, setIsToday] = useState(true);
   
-  // Toast state
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
-  
-  // Cache for data to avoid repeated API calls
-  const [dataCache, setDataCache] = useState({});
 
   // Attendance status colors
   const statusColors = {
@@ -147,25 +143,20 @@ const DailyLabourAllocationDashboard = () => {
 
   // Fetch historical labour data
   const fetchHistoricalLabourData = async (date) => {
-    console.log('🔍 Fetching labour data for date:', date);
     try {
       // Get saved labour allocation record for the date
       const labourResponse = await fetch(`/api/labour-allocation/daily?date=${date}`);
       const labourData = await labourResponse.json();
-      console.log('📋 Labour allocation response:', labourData);
       
       // Get attendance data for the specific date
       const attendanceResponse = await fetch(`/api/attendance/daily?date=${date}`);
       const attendanceData = await attendanceResponse.json();
-      console.log('📅 Attendance response:', attendanceData);
       
       // Get tasks for the specific date
       const tasksResponse = await fetch(`/api/tasks?date=${date}`);
       const tasksData = await tasksResponse.json();
-      console.log('📝 Tasks response:', tasksData);
       
       if (labourData.success && labourData.record && labourData.record.leaderAllocations && labourData.record.leaderAllocations.length > 0) {
-        console.log('✅ Using saved labour allocation data');
         // If we have saved labour allocation data, use it
         const historicalLabourData = labourData.record.leaderAllocations.map(allocation => {
           // Find corresponding attendance data for this leader
@@ -223,16 +214,13 @@ const DailyLabourAllocationDashboard = () => {
         }
         
       } else if (tasksData.success && attendanceData.success) {
-        console.log('✅ Using live tasks and attendance data');
         // If no saved labour allocation but we have live tasks and attendance data, 
         // calculate labour allocation from current tasks
         const leaders = attendanceData.leaders;
-        console.log('👥 Processing', leaders.length, 'leaders from attendance data');
         
         // Get actual labour attendance for the selected date
         const labourResponse = await fetch(`/api/users/labours?date=${date}`);
         const labourAttendanceData = await labourResponse.json();
-        console.log('👷 Labour attendance data:', labourAttendanceData);
         
         const calculatedLabourData = leaders.map(leader => {
           const leaderTasks = tasksData.tasks.filter(task => {
@@ -264,27 +252,22 @@ const DailyLabourAllocationDashboard = () => {
         });
         
         calculatedLabourData.sort((a, b) => a.name.localeCompare(b.name));
-        console.log('📊 Final calculated labour data:', calculatedLabourData);
         setLabourData(calculatedLabourData);
         
         // Use actual present labour count instead of calculated from task allocations
-        console.log('💼 Labour attendance API response:', labourAttendanceData);
         
         let actualPresentLabourCount = 0;
         if (labourAttendanceData.success && typeof labourAttendanceData.presentLabourCount === 'number') {
           actualPresentLabourCount = labourAttendanceData.presentLabourCount;
-          console.log('✅ Using API labour count:', actualPresentLabourCount);
           
           // If no present labours but we have task allocations, use task allocation count
           if (actualPresentLabourCount === 0) {
             const taskAllocatedCount = calculatedLabourData.reduce((total, leader) => total + leader.labourCount, 0);
             if (taskAllocatedCount > 0) {
               actualPresentLabourCount = taskAllocatedCount;
-              console.log('🔄 Using task allocated count instead:', actualPresentLabourCount);
             } else if (isToday && labourAttendanceData.labours) {
               // For today, show total available labours if no attendance marked
               actualPresentLabourCount = labourAttendanceData.totalLabourCount || labourAttendanceData.labours.length;
-              console.log('📅 Today fallback - using total labour count:', actualPresentLabourCount);
             }
           }
         } else {
@@ -293,22 +276,18 @@ const DailyLabourAllocationDashboard = () => {
             const presentCount = labourAttendanceData.labours.filter(labour => labour.isPresent).length;
             if (presentCount > 0) {
               actualPresentLabourCount = presentCount;
-              console.log('🔄 Calculated from labours array:', actualPresentLabourCount);
             } else if (isToday) {
               // For today, show total available labours
               actualPresentLabourCount = labourAttendanceData.labours.length;
-              console.log('📅 Today fallback - using total labour array length:', actualPresentLabourCount);
             }
           } else {
             // Final fallback: calculate from leader task allocations
             const totalLabour = calculatedLabourData.reduce((total, leader) => total + leader.labourCount, 0);
             actualPresentLabourCount = totalLabour;
-            console.log('⚠️ Final fallback from task allocations:', actualPresentLabourCount);
           }
         }
         
         setTotalLabourCount(actualPresentLabourCount);
-        console.log('🧮 Setting total labour count to:', actualPresentLabourCount);
         
         // Calculate total company employees based on actual present labour count
         const codegenCount = companyStats[0]?.count || 0;
@@ -321,15 +300,6 @@ const DailyLabourAllocationDashboard = () => {
         // Use the calculated actual labour count
         const theRiseTotalCalc = actualPresentLabourCount + codegenCount + workingLeaders;
         const totalCompanyCalc = theRiseTotalCalc + ramCount + riseCount;
-        console.log('🧮 Company calculation:', {
-          actualPresentLabourCount,
-          codegenCount,
-          workingLeaders,
-          theRiseTotalCalc,
-          ramCount,
-          riseCount,
-          totalCompanyCalc
-        });
         setTotalCompanyEmployees(totalCompanyCalc);
         
       } else if (attendanceData.success && attendanceData.leaders) {
@@ -354,14 +324,12 @@ const DailyLabourAllocationDashboard = () => {
         ]);
         
       } else {
-        console.log('⚠️ No saved labour allocation or tasks data. Trying to get basic leaders...');
         
         // Try multiple fallback approaches
         let basicLabourData = [];
         
         // Approach 1: Try attendance leaders first
         if (attendanceData.success && attendanceData.leaders && attendanceData.leaders.length > 0) {
-          console.log('✅ Using attendance leaders data:', attendanceData.leaders.length, 'leaders found');
           basicLabourData = attendanceData.leaders.map(leader => ({
             id: leader._id,
             name: leader.name,
@@ -375,10 +343,8 @@ const DailyLabourAllocationDashboard = () => {
           try {
             const leadersResponse = await fetch('/api/users/leaders');
             const leadersData = await leadersResponse.json();
-            console.log('👥 Leaders API response:', leadersData);
             
             if (leadersData.success && leadersData.data && leadersData.data.length > 0) {
-              console.log('✅ Using leaders API data:', leadersData.data.length, 'leaders found');
               basicLabourData = leadersData.data.map(leader => ({
                 id: leader._id,
                 name: leader.name,
@@ -389,13 +355,12 @@ const DailyLabourAllocationDashboard = () => {
               }));
             }
           } catch (apiError) {
-            console.log('❌ Leaders API failed:', apiError.message);
+            // Silent error handling
           }
         }
         
         // Approach 3: Hardcoded fallback for testing
         if (basicLabourData.length === 0) {
-          console.log('📝 Using hardcoded fallback leaders');
           basicLabourData = [
             {
               id: 'test-leader-1',
@@ -416,7 +381,6 @@ const DailyLabourAllocationDashboard = () => {
           ];
         }
         
-        console.log('🎯 Final labour data to set:', basicLabourData);
         setLabourData(basicLabourData);
         setTotalLabourCount(0);
         setTotalCompanyEmployees(0);
@@ -501,7 +465,7 @@ const DailyLabourAllocationDashboard = () => {
       }
       
     } catch (err) {
-      console.error('Error saving company stats:', err);
+      // Silent error handling
     } finally {
       setSaving(false);
     }
@@ -525,7 +489,6 @@ const DailyLabourAllocationDashboard = () => {
       // Get actual labour attendance count
       const labourResponse = await fetch(`/api/users/labours?date=${today}`);
       const labourAttendanceData = await labourResponse.json();
-      console.log('💾 Save - Labour attendance data:', labourAttendanceData);
       
       // Use actual present labour count instead of calculated
       let actualPresentLabourCount = totalLabourCount; // default to current state
@@ -534,7 +497,6 @@ const DailyLabourAllocationDashboard = () => {
       } else if (labourAttendanceData.success && labourAttendanceData.labours) {
         actualPresentLabourCount = labourAttendanceData.labours.filter(labour => labour.isPresent).length;
       }
-      console.log('💾 Save - Using labour count:', actualPresentLabourCount);
       
       const dataToSave = {
         labourData: labourData,
@@ -570,7 +532,6 @@ const DailyLabourAllocationDashboard = () => {
         throw new Error('Failed to save daily data');
       }
     } catch (err) {
-      console.error('Error saving daily data:', err);
       showToast('❌ Failed to save daily data: ' + err.message, 'error');
     } finally {
       setSaving(false);

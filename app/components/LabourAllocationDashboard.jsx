@@ -92,7 +92,6 @@ const LabourAllocationDashboard = () => {
         throw new Error(tasksData.message || leadersData.message || 'Failed to fetch data');
       }
     } catch (err) {
-      console.error('❌ Error fetching labour data:', err);
       setError('Failed to load labour allocation data: ' + err.message);
     } finally {
       setLoading(false);
@@ -129,22 +128,7 @@ const LabourAllocationDashboard = () => {
         }
       }
     } catch (err) {
-      console.error('Error loading saved company stats:', err);
-      // Fallback to localStorage
-      try {
-        const saved = localStorage.getItem('companyStats');
-        if (saved) {
-          const parsedStats = JSON.parse(saved);
-          setCompanyStats(parsedStats);
-          
-          const lastSavedTime = localStorage.getItem('companyStatsLastSaved');
-          if (lastSavedTime) {
-            setLastSaved(new Date(lastSavedTime));
-          }
-        }
-      } catch (localError) {
-        console.error('Error loading from localStorage:', localError);
-      }
+      // Silent error handling
     }
   };
 
@@ -169,16 +153,7 @@ const LabourAllocationDashboard = () => {
       }
       
     } catch (err) {
-      console.error('Error saving company stats:', err);
-      
-      // Fallback to localStorage
-      try {
-        localStorage.setItem('companyStats', JSON.stringify(companyStats));
-        localStorage.setItem('companyStatsLastSaved', new Date().toISOString());
-        setLastSaved(new Date());
-      } catch (localError) {
-        console.error('Failed to save to localStorage:', localError);
-      }
+      // Silent error handling
     } finally {
       setSaving(false);
     }
@@ -215,23 +190,7 @@ const LabourAllocationDashboard = () => {
         }
       }
     } catch (err) {
-      console.error('Error saving daily data:', err);
-      // Fallback to localStorage
-      try {
-        const fallbackData = {
-          labourData,
-          companyStats,
-          calculatedValues: {
-            totalLabourCount,
-            theRiseTotalEmployees,
-            totalCompanyEmployees
-          },
-          savedAt: new Date().toISOString()
-        };
-        localStorage.setItem('dailyLabourAllocation', JSON.stringify(fallbackData));
-      } catch (localError) {
-        console.error('Failed to save to localStorage:', localError);
-      }
+      // Silent error handling
     }
   };
 
