@@ -8,6 +8,7 @@ import User from "@/models/User";
 import Attendance from "@/models/Attendance";
 import Task from "@/models/Task";
 import LabourAllocationRecord from "@/models/LabourAllocationRecord";
+import TaskAllocationRecord from "@/models/TaskAllocationRecord";
 
 export async function GET(request) {
   try {
@@ -29,7 +30,7 @@ export async function GET(request) {
     endOfDay.setHours(23, 59, 59, 999);
 
     // Fetch all data in parallel
-    const [allUsers, leaders, todayAttendance, tasks, todayLabourAllocation, labourAttendance] = await Promise.all([
+    const [allUsers, leaders, todayAttendance, tasks, todayLabourAllocation, labourAttendance, todayTaskAllocations] = await Promise.all([
       // Get all users for total count
       User.find({ 
         role: { $in: ['leader', 'labour'] },
@@ -89,7 +90,15 @@ export async function GET(request) {
           presentLabours: { $sum: { $cond: ['$isPresent', 1, 0] } }
         }}
       ]).then(result => result[0] || { totalLabours: 0, presentLabours: 0 })
-        .catch(err => ({ totalLabours: 0, presentLabours: 0 }))
+        .catch(err => ({ totalLabours: 0, presentLabours: 0 })),
+
+      // Get today's task allocations
+      TaskAllocationRecord.findOne({
+        date: { $gte: today, $lte: endOfDay }
+      }).select('taskAllocations summary').lean()
+        .catch(err => {
+          return null; // Return null if there's an error
+        })
     ]);
 
     // Create attendance map for leaders only
@@ -166,6 +175,18 @@ export async function GET(request) {
       ['Completed', 'completed'].includes(task.status)
     ).length;
 
+    // Calculate today's allocated tasks
+    const todayAllocatedTasks = todayTaskAllocations?.taskAllocations?.length || 0;
+    
+    // Calculate today's active and completed tasks from task allocations
+    const todayActiveTasks = todayTaskAllocations?.taskAllocations?.filter(task => 
+      ['Pending', 'In Progress', 'pending', 'in-progress'].includes(task.status)
+    ).length || 0;
+    
+    const todayCompletedTasks = todayTaskAllocations?.taskAllocations?.filter(task => 
+      ['Completed', 'completed'].includes(task.status)
+    ).length || 0;
+
     // Get attendance status breakdown for leaders only
     const attendanceStatusBreakdown = {};
     const allStatuses = ['Present', 'Work from home', 'Planned Leave', 'Sudden Leave', 'Medical Leave', 'Holiday Leave', 'Lieu leave', 'Work from out of Rise', 'Not Marked'];
@@ -212,6 +233,9 @@ export async function GET(request) {
         activeTasks,
         completedTasks,
         totalTasks: tasks.length,
+        todayAllocatedTasks,
+        todayActiveTasks,
+        todayCompletedTasks,
         
         // Meta information
         date: today.toISOString().split('T')[0],

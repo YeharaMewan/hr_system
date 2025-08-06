@@ -871,9 +871,14 @@ const DailyLabourAllocationDashboard = () => {
                   </thead>
                   <tbody>
                     {labourData && labourData.length > 0 ? (
-                      labourData.map((leader, index) => (
+                      labourData.map((leader, index) => {
+                        // Create a safe key by ensuring we have a valid identifier
+                        const safeId = leader.id || leader._id || leader.name || `leader-${index}`;
+                        const uniqueKey = `leader-${String(safeId)}-${selectedDate}`;
+                        
+                        return (
                         <tr 
-                          key={leader.id || leader._id || `leader-${index}-${selectedDate}`} 
+                          key={uniqueKey} 
                           className={`border-b border-zinc-700/50 hover:bg-zinc-800/50 transition-colors ${
                             leader.labourCount === 0 ? 'bg-red-900/20' : ''
                           }`}
@@ -898,7 +903,8 @@ const DailyLabourAllocationDashboard = () => {
                             </div>
                           </td>
                         </tr>
-                      ))
+                        );
+                      })
                     ) : (
                       <tr>
                         <td colSpan="2" className="text-center py-8 text-zinc-400">
@@ -1052,9 +1058,13 @@ const DailyLabourAllocationDashboard = () => {
                     {/* Remaining Company Stats - Ram studios & Rise Technology */}
                     {companyStats.slice(1).map((stat, index) => {
                       const actualIndex = index + 1;
+                      // Create a safe key by ensuring we have a valid identifier
+                      const safeId = stat.name || `stat-${actualIndex}`;
+                      const uniqueKey = `company-stat-${String(safeId)}-${selectedDate}`;
+                      
                       return (
                         <tr 
-                          key={stat.name || `company-stat-${actualIndex}`} 
+                          key={uniqueKey} 
                           className="border-b border-zinc-700/50 hover:bg-zinc-800/50 transition-colors"
                         >
                           <td className="py-3 px-4">

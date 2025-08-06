@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Users, TrendingUp, Building, Loader, AlertCircle, UserCheck, Settings, Save, Calendar } from 'lucide-react';
+import { Users, TrendingUp, Building, Loader, AlertCircle, UserCheck, Settings, Save, Calendar, CheckCircle, Activity } from 'lucide-react';
 
 const LabourAllocationDashboard = () => {
   const [labourData, setLabourData] = useState([]);
@@ -11,6 +11,7 @@ const LabourAllocationDashboard = () => {
     { name: 'Ram studios', count: 0, editable: true },
     { name: 'Rise Technology', count: 0, editable: true }
   ]);
+  const [dashboardStats, setDashboardStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [editingStats, setEditingStats] = useState({});
@@ -132,6 +133,21 @@ const LabourAllocationDashboard = () => {
     }
   };
 
+  // Fetch dashboard stats for task metrics
+  const fetchDashboardStats = async () => {
+    try {
+      const response = await fetch('/api/dashboard/stats');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setDashboardStats(data.data);
+        }
+      }
+    } catch (err) {
+      // Silent error handling
+    }
+  };
+
   // ✅ CLEAN: Enhanced save company stats function
   const saveCompanyStats = async () => {
     setSaving(true);
@@ -236,6 +252,7 @@ const LabourAllocationDashboard = () => {
   useEffect(() => {
     fetchLabourData();
     loadCompanyStats();
+    fetchDashboardStats();
   }, []);
 
   // Auto-save with debounce
@@ -313,7 +330,7 @@ const LabourAllocationDashboard = () => {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
           <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
             <div className="flex items-center">
               <div className="p-2 bg-violet-600/20 rounded-lg">
@@ -346,6 +363,30 @@ const LabourAllocationDashboard = () => {
               <div className="ml-4">
                 <p className="text-zinc-400 text-sm">Company Total</p>
                 <p className="text-2xl font-bold text-white">{totalCompanyEmployees}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
+            <div className="flex items-center">
+              <div className="p-2 bg-orange-600/20 rounded-lg">
+                <CheckCircle className="w-6 h-6 text-orange-400" />
+              </div>
+              <div className="ml-4">
+                <p className="text-zinc-400 text-sm">Today's Active Tasks</p>
+                <p className="text-2xl font-bold text-white">{dashboardStats?.todayActiveTasks || 0}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6">
+            <div className="flex items-center">
+              <div className="p-2 bg-purple-600/20 rounded-lg">
+                <Activity className="w-6 h-6 text-purple-400" />
+              </div>
+              <div className="ml-4">
+                <p className="text-zinc-400 text-sm">Today's Completed Tasks</p>
+                <p className="text-2xl font-bold text-white">{dashboardStats?.todayCompletedTasks || 0}</p>
               </div>
             </div>
           </div>
@@ -391,13 +432,19 @@ const LabourAllocationDashboard = () => {
                         </td>
                       </tr>
                     ) : (
-                      labourData.map((leader, index) => (
+                      labourData.map((leader, index) => {
+                        // Create a safe key by ensuring we have a valid identifier
+                        const safeId = leader.id || leader._id || leader.name || `leader-${index}`;
+                        const uniqueKey = `leader-${String(safeId)}`;
+                        
+                        return (
                         <tr 
-                          key={leader.id || leader._id || `leader-${index}`} 
+                          key={uniqueKey} 
                           className={`border-b border-zinc-700/50 hover:bg-zinc-800/50 transition-colors ${
                             leader.labourCount === 0 ? 'bg-red-900/20' : ''
                           }`}
                         >
+
                           <td className="py-3 px-4">
                             <div className="flex items-center justify-between">
                               <div>
@@ -419,7 +466,8 @@ const LabourAllocationDashboard = () => {
                             </div>
                           </td>
                         </tr>
-                      ))
+                        );
+                      })
                     )}
                     
                     {/* Total Row */}
@@ -560,9 +608,13 @@ const LabourAllocationDashboard = () => {
                     {/* Remaining Company Stats - Ram studios & Rise Technology */}
                     {companyStats.slice(1).map((stat, index) => {
                       const actualIndex = index + 1;
+                      // Create a safe key by ensuring we have a valid identifier
+                      const safeId = stat.name || `stat-${actualIndex}`;
+                      const uniqueKey = `company-stat-${String(safeId)}`;
+                      
                       return (
                         <tr 
-                          key={stat.name || `company-stat-${actualIndex}`} 
+                          key={uniqueKey} 
                           className="border-b border-zinc-700/50 hover:bg-zinc-800/50 transition-colors"
                         >
                           <td className="py-3 px-4">

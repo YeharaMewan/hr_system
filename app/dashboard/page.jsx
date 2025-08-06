@@ -36,6 +36,9 @@ function DashboardPage() {
     },
     activeTasks: 0,
     completedTasks: 0,
+    todayActiveTasks: 0,
+    todayCompletedTasks: 0,
+    todayAllocatedTasks: 0,
     pendingAllocations: 0,
     companyStats: [],
     attendanceRate: 0,
@@ -123,6 +126,9 @@ function DashboardPage() {
         todayAttendanceBreakdown: { leaders: 0, labours: 0 },
         activeTasks: 0,
         completedTasks: 0,
+        todayActiveTasks: 0,
+        todayCompletedTasks: 0,
+        todayAllocatedTasks: 0,
         pendingAllocations: 0,
         companyStats: [],
         attendanceRate: 0,
@@ -191,6 +197,9 @@ function DashboardPage() {
         todayAttendanceBreakdown: stats.todayAttendanceBreakdown || { leaders: 0, labours: 0 },
         activeTasks: stats.activeTasks || 0,
         completedTasks: stats.completedTasks || 0,
+        todayActiveTasks: stats.todayActiveTasks || 0,
+        todayCompletedTasks: stats.todayCompletedTasks || 0,
+        todayAllocatedTasks: stats.todayAllocatedTasks || 0,
         pendingAllocations: stats.activeTasks || 0,
         companyStats: companyStats.stats || [],
         attendanceRate: stats.attendanceRate || 0,
@@ -222,6 +231,7 @@ function DashboardPage() {
         },
         activeTasks: 0,
         completedTasks: 0,
+        todayAllocatedTasks: 0,
         pendingAllocations: 0,
         companyStats: [],
         attendanceRate: 0,
@@ -430,20 +440,27 @@ function DashboardPage() {
       </div>
 
       {/* Secondary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatCard
-          title="Active Tasks"
-          value={dashboardData.activeTasks}
+          title="Today's Active Tasks"
+          value={dashboardData.todayActiveTasks}
           icon={Activity}
           color="text-orange-500"
-          description="Tasks in progress"
+          description={`${dashboardData.todayActiveTasks} of ${dashboardData.todayAllocatedTasks} allocated tasks active`}
         />
         <StatCard
-          title="Completed Tasks"
-          value={dashboardData.completedTasks}
+          title="Today's Completed Tasks"
+          value={dashboardData.todayCompletedTasks}
           icon={Target}
           color="text-green-600"
-          description="Tasks finished"
+          description={`${dashboardData.todayCompletedTasks} of ${dashboardData.todayAllocatedTasks} allocated tasks completed`}
+        />
+        <StatCard
+          title="Today's Allocated Tasks"
+          value={dashboardData.todayAllocatedTasks}
+          icon={ClipboardList}
+          color="text-purple-600"
+          description="Total tasks allocated for today"
         />
       </div>
       {/* Quick Actions */}
