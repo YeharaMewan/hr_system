@@ -49,10 +49,10 @@ const Header = ({ onMenuButtonClick }) => {
     };
 
     return (
-        <header className="bg-zinc-900 border-b border-zinc-800 p-4 sticky top-0 z-50">
-            <div className="flex items-center justify-between">
+        <header className="bg-zinc-900 border-b border-zinc-800 p-4 sticky top-0 z-50" suppressHydrationWarning={true}>
+            <div className="flex items-center justify-between" suppressHydrationWarning={true}>
                 
-                <div className="w-8"> {/* වම්පස icon එක සඳහා ඉඩක් තබාගැනීම */}
+                <div className="w-8" suppressHydrationWarning={true}> {/* වම්පස icon එක සඳහා ඉඩක් තබාගැනීම */}
                     {isNestedRoute ? (
                         // ✅ නිවැරදි කිරීම: Nested route එකකදී Back Button එක පෙන්වීම
                         <button
@@ -73,7 +73,7 @@ const Header = ({ onMenuButtonClick }) => {
                                 <Menu className="w-6 h-6" />
                             </button>
                             {/* Desktop වලදී හිස්තැනක් පිරවීමට */}
-                            <div className="hidden md:block w-6"></div>
+                            <div className="hidden md:block w-6" suppressHydrationWarning={true}></div>
                         </>
                     )}
                 </div>
@@ -82,7 +82,7 @@ const Header = ({ onMenuButtonClick }) => {
                     Dashboard
                 </h1>
 
-                <div className="flex items-center relative" ref={dropdownRef}>
+                <div className="flex items-center relative" ref={dropdownRef} suppressHydrationWarning={true}>
                     <button 
                         onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                         className="flex items-center gap-2 p-2 rounded-full hover:bg-zinc-800 transition-colors" 

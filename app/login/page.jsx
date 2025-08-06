@@ -2,8 +2,12 @@
 
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import Image from 'next/image';
+import ClientOnly from '../components/ClientOnly';
+
+// Force dynamic rendering to avoid static generation issues with useSearchParams
+export const dynamic = 'force-dynamic';
 
 // Spinner component
 const Spinner = () => (
@@ -28,7 +32,24 @@ const EyeSlashIcon = (props) => (
   </svg>
 );
 
-export default function LoginPage() {
+// Loading component for Suspense fallback
+const LoginLoading = () => (
+  <div className="flex justify-center items-center min-h-screen bg-zinc-950 text-white p-4" suppressHydrationWarning={true}>
+    <div className="p-8 rounded-xl shadow-2xl w-full max-w-md bg-zinc-900 border border-zinc-800" suppressHydrationWarning={true}>
+      <div className="flex flex-col items-center mb-8" suppressHydrationWarning={true}>
+        <Image src="/RiseHRLogo.png" alt="Rise HR Logo" width={130} height={45} priority />
+        <p className="mt-2 text-zinc-500 text-sm">HR Solution (Preview)</p>
+      </div>
+      <div className="flex justify-center items-center py-8" suppressHydrationWarning={true}>
+        <Spinner />
+        <span className="ml-2 text-zinc-400">Loading...</span>
+      </div>
+    </div>
+  </div>
+);
+
+// Login form component that uses useSearchParams
+function LoginForm() {
   const [employeeId, setEmployeeId] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false); 
@@ -63,20 +84,20 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex justify-center items-center min-h-screen bg-zinc-950 text-white p-4">
-      <div className="p-8 rounded-xl shadow-2xl w-full max-w-md bg-zinc-900 border border-zinc-800">
+    <div className="flex justify-center items-center min-h-screen bg-zinc-950 text-white p-4" suppressHydrationWarning={true}>
+      <div className="p-8 rounded-xl shadow-2xl w-full max-w-md bg-zinc-900 border border-zinc-800" suppressHydrationWarning={true}>
         
-        <div className="flex flex-col items-center mb-8">
+        <div className="flex flex-col items-center mb-8" suppressHydrationWarning={true}>
           <Image src="/RiseHRLogo.png" alt="Rise HR Logo" width={130} height={45} priority />
           <p className="mt-2 text-zinc-500 text-sm">HR Solution (Preview)</p>
         </div>
 
         
         
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6" suppressHydrationWarning={true}>
           {error && <p className="bg-red-500/20 text-red-400 p-3 rounded-lg text-center text-sm font-medium">{error}</p>}
           
-          <div>
+          <div suppressHydrationWarning={true}>
             <label htmlFor="employeeId" className="block text-sm font-medium text-zinc-400 mb-2">
               Email
             </label>
@@ -92,12 +113,12 @@ export default function LoginPage() {
             />
           </div>
 
-          <div>
+          <div suppressHydrationWarning={true}>
             <label htmlFor="password" className="block text-sm font-medium text-zinc-400 mb-2">
               Password
             </label>
           
-            <div className="relative">
+            <div className="relative" suppressHydrationWarning={true}>
                 <input
                     id="password"
                     type={showPassword ? "text" : "password"}
@@ -126,7 +147,7 @@ export default function LoginPage() {
           </div>
           
           {/* --- Modified Section --- */}
-          <div className="text-center text-sm text-zinc-400">
+          <div className="text-center text-sm text-zinc-400" suppressHydrationWarning={true}>
             Don't have an account?{' '}
             <a href="/register" className="font-medium text-violet-400 hover:text-violet-300 hover:underline">
                 Register here
@@ -150,5 +171,15 @@ export default function LoginPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <ClientOnly fallback={<LoginLoading />}>
+      <Suspense fallback={<LoginLoading />} suppressHydrationWarning={true}>
+        <LoginForm />
+      </Suspense>
+    </ClientOnly>
   );
 }

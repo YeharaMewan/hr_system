@@ -35,9 +35,10 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
                 md:translate-x-0
             `}
             aria-label="Sidebar"
+            suppressHydrationWarning={true}
         >
-            <div className="flex flex-col h-full">
-                <div className="flex items-center justify-center h-20 border-b border-zinc-800">
+            <div className="flex flex-col h-full" suppressHydrationWarning={true}>
+                <div className="flex items-center justify-center h-20 border-b border-zinc-800" suppressHydrationWarning={true}>
                     <Link href="/dashboard" className="flex items-center gap-2">
                         <Image src="/RiseHRLogo.png" alt="Rise HR Logo" width={120} height={120} />
                     </Link>
@@ -84,7 +85,7 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
                     </ul>
                 </nav>
 
-                <div className="px-3 py-4 mt-auto border-t border-zinc-800">
+                <div className="px-3 py-4 mt-auto border-t border-zinc-800" suppressHydrationWarning={true}>
                     <button 
                         onClick={() => signOut({ 
                             callbackUrl: '/login',

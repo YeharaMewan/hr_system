@@ -14,12 +14,12 @@ export default function DashboardLayout({ children }) {
 
     return (
         // ප්‍රධාන පසුබිම තද වර්ණයකට වෙනස් කිරීම (login page එකට ගැලපෙන සේ)
-        <div className="bg-zinc-950 text-white min-h-screen">
+        <div className="bg-zinc-950 text-white min-h-screen" suppressHydrationWarning={true}>
             
             {/* Sidebar component එකට props යැවීම */}
             <Sidebar isOpen={isSidebarOpen} toggleSidebar={toggleSidebar} />
 
-            <div className="md:ml-64 transition-all duration-300 ease-in-out">
+            <div className="md:ml-64 transition-all duration-300 ease-in-out" suppressHydrationWarning={true}>
                 {/* Mobile වලදී Sidebar open වූ විට පෙන්වන Overlay එක */}
                 {isSidebarOpen && (
                     <div

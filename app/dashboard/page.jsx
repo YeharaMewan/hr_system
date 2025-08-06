@@ -20,6 +20,9 @@ import {
   Clock
 } from 'lucide-react';
 
+// Force dynamic rendering to avoid hydration issues
+export const dynamic = 'force-dynamic';
+
 function DashboardPage() {
   const { data: session, status } = useSession();
   const [dashboardData, setDashboardData] = useState({
@@ -258,7 +261,7 @@ function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-zinc-400 text-sm font-medium">{title}</p>
-          <p className={`text-2xl font-bold mt-1 ${color}`}>
+          <div className={`text-2xl font-bold mt-1 ${color}`}>
             {loading ? (
               <div className="flex items-center">
                 <div className="animate-pulse bg-zinc-600 h-8 w-16 rounded"></div>
@@ -274,7 +277,7 @@ function DashboardPage() {
                 )}
               </span>
             )}
-          </p>
+          </div>
           {description && (
             <p className="text-zinc-500 text-xs mt-1">{description}</p>
           )}
@@ -336,10 +339,10 @@ function DashboardPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" suppressHydrationWarning={true}>
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between" suppressHydrationWarning={true}>
+        <div suppressHydrationWarning={true}>
           <h1 className="text-2xl font-bold text-white">Dashboard Overview</h1>
           <div className="flex items-center gap-4 mt-1">
             <p className="text-zinc-400">
