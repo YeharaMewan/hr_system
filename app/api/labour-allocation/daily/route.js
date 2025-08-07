@@ -1,115 +1,107 @@
-// app/api/labour-allocation/daily/route.js
+// app/api/labour-allocation/daily/route.js - UPDATED
+
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import connectMongoDB from "@/lib/mongodb";
 import LabourAllocationRecord from "@/models/LabourAllocationRecord";
 
-// Save daily labour allocation data
-export async function POST(request) {
-  try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session || session.user.role !== 'hr') {
-      return NextResponse.json(
-        { message: "Unauthorized access" },
-        { status: 401 }
-      );
-    }
-
-    const { labourData, companyStats, calculatedValues, date, attendanceData } = await request.json();
-
-    if (!labourData || !Array.isArray(labourData)) {
-      return NextResponse.json(
-        { message: "Invalid labour data" },
-        { status: 400 }
-      );
-    }
-
-    await connectMongoDB();
-
-    const userId = session.user.id || session.user._id;
-    const targetDate = date ? new Date(date) : new Date();
-    targetDate.setHours(0, 0, 0, 0);
-
-    // Get attendance data for the specific date if not provided
-    let finalAttendanceData = attendanceData;
-    if (!attendanceData) {
-      try {
-        const attendanceResponse = await fetch(`${process.env.NEXTAUTH_URL}/api/attendance/daily?date=${targetDate.toISOString().split('T')[0]}`);
-        const attendanceResult = await attendanceResponse.json();
-        if (attendanceResult.success) {
-          finalAttendanceData = attendanceResult.leaders;
-        }
-      } catch (err) {
-        // Silent fallback if attendance data is not available
-      }
-    }
-
-    // Create comprehensive record with attendance status
-    const recordData = {
-      leaderAllocations: labourData.map(leader => {
-        // Find attendance status for this leader
-        const attendanceRecord = finalAttendanceData 
-          ? finalAttendanceData.find(att => att._id?.toString() === leader.id?.toString() || att.userId?.toString() === leader.id?.toString())
-          : null;
-          
-        return {
-          leaderId: leader.id,
-          leaderName: leader.name,
-          labourCount: leader.labourCount,
-          tasksCount: leader.tasksCount,
-          attendanceStatus: attendanceRecord ? attendanceRecord.attendanceStatus : (leader.attendanceStatus || 'Not Marked')
-        };
-      }),
-      companyStats: companyStats || [
-        { name: 'Codegen + Aigrow staff\'s', count: 0, editable: true },
-        { name: 'Ram studios', count: 0, editable: true },
-        { name: 'Rise Technology', count: 0, editable: true }
-      ],
-      // Add calculated values for historical tracking
-      calculatedValues: calculatedValues || {},
-      totalLabourCount: labourData.reduce((total, leader) => total + leader.labourCount, 0),
-      totalLeaders: labourData.length,
-      updatedAt: new Date(),
-      updatedBy: userId
-    };
-
-    // Create or update the record
-    const record = await LabourAllocationRecord.findOneAndUpdate(
-      { 
-        date: targetDate
-      },
-      recordData,
-      {
-        upsert: true,
-        new: true,
-        runValidators: true
-      }
-    );
-
-    return NextResponse.json({
-      message: "Daily labour allocation saved successfully",
-      record: {
-        _id: record._id,
-        date: record.date,
-        totalLabourCount: record.totalLabourCount,
-        totalLeaders: record.totalLeaders,
-        calculatedValues: record.calculatedValues,
-        updatedAt: record.updatedAt
-      },
-      success: true
-    });
-
-  } catch (error) {
-    return NextResponse.json(
-      { message: "Server error occurred", success: false },
-      { status: 500 }
-    );
+// ✅ Helper function to get proper date range for Sri Lanka timezone
+function getSriLankaDateRange(dateString) {
+  // Sri Lanka timezone offset: +05:30
+  const SRI_LANKA_OFFSET = 5.5 * 60 * 60 * 1000; // 5.5 hours in milliseconds
+  
+  let targetDate;
+  
+  if (dateString) {
+    // Parse the provided date string
+    targetDate = new Date(dateString);
+  } else {
+    // Get today's date
+    targetDate = new Date();
   }
+  
+  // ✅ Create Sri Lanka timezone date range
+  // Start: 00:00:00 Sri Lanka time
+  const startOfDay = new Date(targetDate);
+  startOfDay.setHours(0, 0, 0, 0);
+  
+  // End: 23:59:59 Sri Lanka time  
+  const endOfDay = new Date(targetDate);
+  endOfDay.setHours(23, 59, 59, 999);
+  
+  // ✅ Convert to UTC for MongoDB query
+  // MongoDB stores in UTC, so we need to subtract Sri Lanka offset
+  const utcStartOfDay = new Date(startOfDay.getTime() - SRI_LANKA_OFFSET);
+  const utcEndOfDay = new Date(endOfDay.getTime() - SRI_LANKA_OFFSET);
+  
+  console.log('🇱🇰 Sri Lanka Date Range:');
+  console.log('   Local Start:', startOfDay.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
+  console.log('   Local End:', endOfDay.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
+  console.log('🌐 UTC Date Range for MongoDB:');
+  console.log('   UTC Start:', utcStartOfDay.toISOString());
+  console.log('   UTC End:', utcEndOfDay.toISOString());
+  
+  return {
+    startOfDay: utcStartOfDay,
+    endOfDay: utcEndOfDay,
+    localStartOfDay: startOfDay,
+    localEndOfDay: endOfDay
+  };
 }
 
-// Get daily labour allocation data
+// ✅ Alternative: Better approach using proper timezone handling
+function getSriLankaDateRangeV2(dateString) {
+  // Use Intl API for proper timezone handling
+  const timeZone = 'Asia/Colombo';
+  
+  let targetDate;
+  if (dateString) {
+    targetDate = new Date(dateString);
+  } else {
+    targetDate = new Date();
+  }
+  
+  // ✅ Get the date in Sri Lanka timezone
+  const year = targetDate.getFullYear();
+  const month = targetDate.getMonth();
+  const day = targetDate.getDate();
+  
+  // Create start and end times in Sri Lanka timezone
+  const startOfDay = new Date();
+  startOfDay.setFullYear(year, month, day);
+  startOfDay.setHours(0, 0, 0, 0);
+  
+  const endOfDay = new Date();
+  endOfDay.setFullYear(year, month, day);
+  endOfDay.setHours(23, 59, 59, 999);
+  
+  // ✅ Convert to UTC by getting timezone offset
+  const sriLankaOffset = 5.5 * 60; // 5.5 hours in minutes
+  const currentOffset = startOfDay.getTimezoneOffset(); // Server timezone offset in minutes
+  const offsetDifference = (currentOffset + sriLankaOffset) * 60 * 1000; // Convert to milliseconds
+  
+  const utcStartOfDay = new Date(startOfDay.getTime() - offsetDifference);
+  const utcEndOfDay = new Date(endOfDay.getTime() - offsetDifference);
+  
+  console.log('📅 Date Processing:');
+  console.log('   Input date:', dateString || 'today');
+  console.log('   Target date:', targetDate.toISOString());
+  console.log('🇱🇰 Sri Lanka timezone (intended):');
+  console.log('   Start:', `${year}-${(month+1).toString().padStart(2,'0')}-${day.toString().padStart(2,'0')} 00:00:00`);
+  console.log('   End:', `${year}-${(month+1).toString().padStart(2,'0')}-${day.toString().padStart(2,'0')} 23:59:59`);
+  console.log('🌐 UTC range for MongoDB query:');
+  console.log('   UTC Start:', utcStartOfDay.toISOString());
+  console.log('   UTC End:', utcEndOfDay.toISOString());
+  
+  return {
+    startOfDay: utcStartOfDay,
+    endOfDay: utcEndOfDay,
+    localDate: `${year}-${(month+1).toString().padStart(2,'0')}-${day.toString().padStart(2,'0')}`
+  };
+}
+
+// ✅ UPDATED GET method with proper Sri Lanka timezone handling
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions);
@@ -124,49 +116,180 @@ export async function GET(request) {
     await connectMongoDB();
 
     const { searchParams } = new URL(request.url);
-    const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
-    const page = parseInt(searchParams.get('page')) || 1;
-    const limit = parseInt(searchParams.get('limit')) || 10;
+    const date = searchParams.get('date');
 
-    if (date === 'today' || date === new Date().toISOString().split('T')[0]) {
-      // Get today's record
-      const targetDate = new Date();
-      targetDate.setHours(0, 0, 0, 0);
+    console.log('📅 Requested date:', date);
 
-      const record = await LabourAllocationRecord.findOne({ 
-        date: targetDate 
-      })
-      .populate('createdBy', 'name email')
-      .populate('updatedBy', 'name email')
-      .populate('leaderAllocations.leaderId', 'name email')
-      .lean();
+    // ✅ Use Sri Lanka timezone-aware date range
+    const { startOfDay, endOfDay, localDate } = getSriLankaDateRangeV2(date);
 
-      return NextResponse.json({
-        record: record,
-        success: true
-      });
-    } else {
-      // Get historical record for specific date
-      const targetDate = new Date(date);
-      targetDate.setHours(0, 0, 0, 0);
+    // ✅ Query using proper UTC range
+    const record = await LabourAllocationRecord.findOne({ 
+      createdAt: {
+        $gte: startOfDay,
+        $lte: endOfDay
+      }
+    })
+    .populate('createdBy', 'name email')
+    .populate('updatedBy', 'name email')
+    .populate('leaderAllocations.leaderId', 'name email')
+    .sort({ createdAt: -1 }) // Get latest record of the day
+    .lean();
 
-      const record = await LabourAllocationRecord.findOne({ 
-        date: targetDate 
-      })
-      .populate('createdBy', 'name email')
-      .populate('updatedBy', 'name email')
-      .populate('leaderAllocations.leaderId', 'name email')
-      .lean();
-
-      return NextResponse.json({
-        record: record,
-        success: true
-      });
+    console.log('📋 Record found:', record ? 'Yes' : 'No');
+    if (record) {
+      console.log('   Record created at:', record.createdAt);
+      console.log('   Record date field:', record.date);
     }
 
+    return NextResponse.json({
+      record: record,
+      success: true,
+      debug: {
+        requestedDate: date,
+        localDate: localDate,
+        searchRange: {
+          start: startOfDay.toISOString(),
+          end: endOfDay.toISOString()
+        }
+      }
+    });
+
   } catch (error) {
+    console.error('❌ Labour allocation API error:', error);
+    
     return NextResponse.json(
-      { message: "Server error occurred", success: false },
+      { 
+        message: "Server error occurred: " + error.message,
+        success: false,
+        error: error.stack
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// ✅ UPDATED POST method with Sri Lanka timezone
+export async function POST(request) {
+  try {
+    const session = await getServerSession(authOptions);
+    
+    if (!session || session.user.role !== 'hr') {
+      return NextResponse.json(
+        { message: "Unauthorized access" },
+        { status: 401 }
+      );
+    }
+
+    const body = await request.json();
+    const { 
+      labourData, 
+      companyStats, 
+      calculatedValues, 
+      date, 
+      attendanceData 
+    } = body;
+
+    console.log('💾 Saving labour allocation data for date:', date);
+
+    await connectMongoDB();
+
+    const userId = session.user.id || session.user._id;
+    
+    // ✅ Use Sri Lanka timezone for date handling
+    const { startOfDay, endOfDay, localDate } = getSriLankaDateRangeV2(date);
+    
+    // ✅ Check for existing record using proper date range
+    const existingRecord = await LabourAllocationRecord.findOne({
+      createdBy: userId,
+      createdAt: {
+        $gte: startOfDay,
+        $lte: endOfDay
+      }
+    });
+
+    console.log('🔍 Existing record check:');
+    console.log('   User ID:', userId);
+    console.log('   Date range:', startOfDay.toISOString(), 'to', endOfDay.toISOString());
+    console.log('   Found existing:', existingRecord ? 'Yes' : 'No');
+
+    // ✅ Prepare record data with Sri Lanka date
+    const targetDate = date ? new Date(date) : new Date();
+    
+    const recordData = {
+      date: targetDate, // Keep original date for display
+      leaderAllocations: labourData ? labourData.map(leader => ({
+        leaderId: leader.id,
+        leaderName: leader.name,
+        labourCount: leader.labourCount || 0,
+        tasksCount: leader.tasksCount || 0,
+        attendanceStatus: leader.attendanceStatus || 'Not Marked'
+      })) : [],
+      companyStats: companyStats || [
+        { name: 'Codegen + Aigrow staff\'s', count: 0, editable: true },
+        { name: 'Ram studios', count: 0, editable: true },
+        { name: 'Rise Technology', count: 0, editable: true }
+      ],
+      calculatedValues: calculatedValues || {},
+      totalLabourCount: labourData ? labourData.reduce((total, leader) => total + (leader.labourCount || 0), 0) : 0,
+      totalLeaders: labourData ? labourData.length : 0,
+      updatedAt: new Date(),
+      updatedBy: userId
+    };
+
+    let record;
+    
+    if (existingRecord) {
+      // ✅ Update existing record
+      console.log('📝 Updating existing record:', existingRecord._id);
+      
+      record = await LabourAllocationRecord.findByIdAndUpdate(
+        existingRecord._id,
+        recordData,
+        {
+          new: true,
+          runValidators: true
+        }
+      );
+    } else {
+      // ✅ Create new record
+      console.log('🆕 Creating new record');
+      
+      record = new LabourAllocationRecord({
+        ...recordData,
+        createdBy: userId
+      });
+      
+      await record.save();
+    }
+
+    console.log('✅ Record saved successfully:', record._id);
+    console.log('   Created at:', record.createdAt);
+    console.log('   Date field:', record.date);
+
+    return NextResponse.json({
+      message: "Daily labour allocation saved successfully",
+      record: {
+        _id: record._id,
+        date: record.date,
+        totalLabourCount: record.totalLabourCount,
+        totalLeaders: record.totalLeaders,
+        calculatedValues: record.calculatedValues,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt
+      },
+      success: true
+    });
+
+  } catch (error) {
+    console.error('❌ Labour allocation save error:', error);
+    
+    return NextResponse.json(
+      { 
+        message: "Server error occurred: " + error.message,
+        success: false,
+        error: error.stack
+      },
       { status: 500 }
     );
   }
