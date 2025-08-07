@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import connectMongoDB from "@/lib/mongodb";
 import TaskAllocationRecord from "@/models/TaskAllocationRecord";
+import Labour from "@/models/Labour";
 
 // Save daily task allocation data
 export async function POST(request) {
@@ -32,9 +33,12 @@ export async function POST(request) {
     const targetDate = date ? new Date(date) : new Date();
     targetDate.setHours(0, 0, 0, 0);
 
-    // Extract leaders and labours from users
+    // Extract leaders and labours from users (now from Labour model)
     const leaders = users ? users.filter(user => user.role === 'leader') : [];
-    const labours = users ? users.filter(user => user.role === 'labour') : [];
+    // Labours will be fetched from Labour model separately
+    const [labours] = await Promise.all([
+      Labour.find({ isActive: { $ne: false } }).select('_id name email role skills').lean()
+    ]);
 
     // Create comprehensive task allocation record
     const recordData = {

@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import connectMongoDB from "@/lib/mongodb";
 import User from "@/models/User";
+import Labour from "@/models/Labour";
 import Attendance from "@/models/Attendance";
 
 export async function GET(request) {
@@ -20,22 +21,26 @@ export async function GET(request) {
 
     await connectMongoDB();
 
-    // Get all users (leaders and labours)
-    const users = await User.find({ 
-      role: { $in: ['leader', 'labour'] }
-    }).select('_id name email role skills').lean();
+    // Get all users (leaders and employees) and labours separately
+    const [users, labours] = await Promise.all([
+      User.find({}).select('_id name email role skills department').lean(),
+      Labour.find({}).select('_id name email role skills department').lean()
+    ]);
+
+    // Combine users and labours
+    const allUsers = [...users, ...labours];
 
     // Get today's attendance for all users
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
     const todayAttendance = await Attendance.find({
-      userId: { $in: users.map(u => u._id) },
+      userId: { $in: allUsers.map(u => u._id) },
       date: today
     }).lean();
 
     // Map attendance to users with proper field mapping
-    const usersWithStatus = users.map(user => {
+    const usersWithStatus = allUsers.map(user => {
       const attendance = todayAttendance.find(
         att => att.userId.toString() === user._id.toString()
       );
@@ -45,12 +50,13 @@ export async function GET(request) {
       return {
         ...user,
         status: finalStatus,
-        skills: user.skills || (user.role === 'labour' ? ['General'] : ['Management'])
+        department: user.department || 'No Department',
+        skills: user.skills || (user.role === 'labour' ? ['General'] : user.role === 'leader' ? ['Management'] : user.role === 'hr' ? ['HR Management'] : ['General'])
       };
     });
 
     return NextResponse.json({
-      users: usersWithStatus,
+      data: usersWithStatus,  // Changed to 'data' for consistency
       success: true
     });
 

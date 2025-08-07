@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import connectMongoDB from "@/lib/mongodb";
 import User from "@/models/User";
+import Labour from "@/models/Labour";
 import Attendance from "@/models/Attendance";
 import Task from "@/models/Task";
 import LabourAllocationRecord from "@/models/LabourAllocationRecord";
@@ -30,10 +31,14 @@ export async function GET(request) {
     endOfDay.setHours(23, 59, 59, 999);
 
     // Fetch all data in parallel
-    const [allUsers, leaders, todayAttendance, tasks, todayLabourAllocation, labourAttendance, todayTaskAllocations] = await Promise.all([
-      // Get all users for total count
+    const [allUsers, allLabours, leaders, todayAttendance, tasks, todayLabourAllocation, labourAttendance, todayTaskAllocations] = await Promise.all([
+      // Get all users (leaders and employees only)
       User.find({ 
-        role: { $in: ['leader', 'labour'] },
+        isActive: { $ne: false }
+      }).select('_id name role').lean(),
+      
+      // Get all labours
+      Labour.find({ 
         isActive: { $ne: false }
       }).select('_id name role').lean(),
       
@@ -60,8 +65,8 @@ export async function GET(request) {
         }),
       
       // Get actual labour attendance count for today
-      User.aggregate([
-        { $match: { role: 'labour', isActive: { $ne: false } } },
+      Labour.aggregate([
+        { $match: { isActive: { $ne: false } } },
         { $lookup: {
             from: 'attendances',
             let: { userId: '$_id' },
@@ -109,10 +114,11 @@ export async function GET(request) {
         attendanceMap[att.userId._id.toString()] = att.status;
       });
 
-    // Calculate user statistics (use allUsers for total counts)
-    const totalUsers = allUsers.length;
-    const totalLabours = allUsers.filter(user => user.role === 'labour').length;
+    // Calculate user statistics
+    const totalUsers = allUsers.length + allLabours.length;
+    const totalLabours = allLabours.length;
     const totalLeaders = allUsers.filter(user => user.role === 'leader').length;
+    const totalEmployees = allUsers.filter(user => user.role === 'employee').length;
 
     // Calculate attendance statistics for leaders (Present + Work from home + Work from out of Rise)
     const workingLeaders = leaders.filter(leader => {
@@ -209,6 +215,7 @@ export async function GET(request) {
         // User statistics
         totalUsers,
         totalLabours,
+        totalEmployees,
         totalLeaders,
         
         // Attendance statistics (Total Labour + Working Leaders + Company Employees)

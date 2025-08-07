@@ -3,6 +3,7 @@ import NextAuth from "next-auth/next";
 import CredentialsProvider from "next-auth/providers/credentials";
 import connectMongoDB from "@/lib/mongodb";
 import User from "@/models/User"; 
+import Labour from "@/models/Labour"; 
 import bcrypt from "bcryptjs";
 
 export const authOptions = {
@@ -16,7 +17,14 @@ export const authOptions = {
 
         try {
           await connectMongoDB();
-          const user = await User.findOne({ email });
+          
+          // First try to find user in User model
+          let user = await User.findOne({ email });
+          
+          // If not found in User model, try Labour model
+          if (!user) {
+            user = await Labour.findOne({ email });
+          }
 
           if (!user) {
             return null;

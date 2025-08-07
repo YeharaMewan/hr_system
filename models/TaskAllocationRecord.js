@@ -201,10 +201,10 @@ TaskAllocationRecordSchema.statics.getTodaysRecord = async function(userId) {
 };
 
 // Instance method to update task allocations
-TaskAllocationRecordSchema.methods.updateTaskAllocations = async function(tasks, users) {
-  // Extract leaders and labours from users
+TaskAllocationRecordSchema.methods.updateTaskAllocations = async function(tasks, users, labours) {
+  // Extract leaders from users, labours passed separately
   const leaders = users.filter(user => user.role === 'leader');
-  const labours = users.filter(user => user.role === 'labour');
+  // Use passed labours parameter instead of filtering from users
 
   this.taskAllocations = tasks.map(task => ({
     taskId: task._id,

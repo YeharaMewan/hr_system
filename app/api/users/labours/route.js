@@ -3,13 +3,13 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import connectMongoDB from "@/lib/mongodb";
-import User from "@/models/User";
+import Labour from "@/models/Labour";
 import Attendance from "@/models/Attendance";
 
 export async function GET(request) {
   try {
     const session = await getServerSession(authOptions);
-    
+      
     if (!session || session.user.role !== 'hr') {
       return NextResponse.json(
         { message: "Unauthorized access" },
@@ -29,8 +29,7 @@ export async function GET(request) {
     endOfDay.setHours(23, 59, 59, 999);
 
     // Get all labour users
-    const labours = await User.find({ 
-      role: 'labour',
+    const labours = await Labour.find({ 
       isActive: { $ne: false }
     }).select('_id name email role').lean();
 

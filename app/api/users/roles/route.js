@@ -1,4 +1,4 @@
-// app/api/users/leaders/route.js
+// app/api/users/roles/route.js
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
@@ -18,25 +18,18 @@ export async function GET(request) {
 
     await connectMongoDB();
 
-    // Get only leaders
-    const leaders = await User.find({ 
-      role: 'leader'
-    }).select('_id name email role skills status department').lean();
-
-    // Add default skills if missing
-    const leadersWithDefaults = leaders.map(leader => ({
-      ...leader,
-      skills: leader.skills || ['Management'],
-      status: leader.status || 'active',
-      department: leader.department || 'No Department'
-    }));
+    // Get unique roles from users
+    const roles = await User.distinct('role', { 
+      role: { $exists: true, $ne: null, $ne: '' }
+    });
 
     return NextResponse.json({
-      data: leadersWithDefaults,  // 'users' වෙනුවට 'data' භාවිතා කරන්න attendance API එකට ගැලපෙන්න
+      data: roles,
       success: true
     });
 
   } catch (error) {
+    console.error("Error fetching roles:", error);
     return NextResponse.json(
       { message: "Server error occurred" },
       { status: 500 }

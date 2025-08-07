@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import connectMongoDB from "@/lib/mongodb";
 import User from "@/models/User";
+import Labour from "@/models/Labour";
 
 export async function GET(request) {
   try {
@@ -18,15 +19,19 @@ export async function GET(request) {
 
     await connectMongoDB();
 
-    // Get all users (leaders and labours)
-    const users = await User.find({ 
-      role: { $in: ['leader', 'labour'] }
-    }).select('_id name email role skills status').lean();
+    // Get all users (leaders and employees) and labours separately
+    const [users, labours] = await Promise.all([
+      User.find({}).select('_id name email role skills status').lean(),
+      Labour.find({}).select('_id name email role skills status').lean()
+    ]);
+
+    // Combine users and labours
+    const allUsers = [...users, ...labours];
 
     // Add default skills if missing
-    const usersWithDefaults = users.map(user => ({
+    const usersWithDefaults = allUsers.map(user => ({
       ...user,
-      skills: user.skills || (user.role === 'labour' ? ['General'] : ['Management']),
+      skills: user.skills || (user.role === 'labour' ? ['General'] : user.role === 'leader' ? ['Management'] : user.role === 'hr' ? ['HR Management'] : ['General']),
       status: user.status || 'active'
     }));
 

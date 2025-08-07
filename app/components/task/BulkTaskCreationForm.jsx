@@ -7,6 +7,7 @@ import Toast from '../ui/Toast';
 
 const BulkTaskCreationForm = ({ 
   users = [], 
+  labours = [], // Add labours prop
   onTasksCreated, 
   onCancel, 
   isOpen = false 
@@ -27,7 +28,7 @@ const BulkTaskCreationForm = ({
   // ==================== MEMOIZED VALUES ====================
   // Separate users by role
   const leaders = useMemo(() => users.filter(user => user.role === 'leader'), [users]);
-  const labours = useMemo(() => users.filter(user => user.role === 'labour'), [users]);
+  // Use passed labours prop instead of filtering from users
 
   // Calculate total tasks
   const totalTasks = useMemo(() => {

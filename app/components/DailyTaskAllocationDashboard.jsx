@@ -31,6 +31,7 @@ const DailyTaskAllocationDashboard = () => {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [tasks, setTasks] = useState([]);
   const [users, setUsers] = useState([]);
+  const [labours, setLabours] = useState([]); // Separate state for labours
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isToday, setIsToday] = useState(true);
@@ -82,7 +83,7 @@ const DailyTaskAllocationDashboard = () => {
   // Load all live data (for today)
   const loadAllData = async (date = null) => {
     try {
-      await Promise.all([loadTasks(date), loadUsers()]);
+      await Promise.all([loadTasks(date), loadUsers(), loadLabours()]);
     } catch (error) {
       console.error('Error loading live data:', error);
       throw error;
@@ -107,19 +108,38 @@ const DailyTaskAllocationDashboard = () => {
     }
   };
 
-  // Load users (leaders and labours)
+  // Load users (leaders and employees only)
   const loadUsers = async () => {
     try {
       const response = await fetch('/api/users');
       const data = await response.json();
       
       if (data.success) {
-        setUsers(data.users);
+        // Filter out labours from users as they'll be loaded separately
+        const nonLabourUsers = data.users.filter(user => user.role !== 'labour');
+        setUsers(nonLabourUsers);
       } else {
         throw new Error(data.message);
       }
     } catch (error) {
       console.error('Error loading users:', error);
+      throw error;
+    }
+  };
+
+  // Load labours separately
+  const loadLabours = async () => {
+    try {
+      const response = await fetch('/api/users/labours');
+      const data = await response.json();
+      
+      if (data.success) {
+        setLabours(data.labours);
+      } else {
+        throw new Error(data.message);
+      }
+    } catch (error) {
+      console.error('Error loading labours:', error);
       throw error;
     }
   };
@@ -354,9 +374,9 @@ const DailyTaskAllocationDashboard = () => {
     fetchTaskDataForDate(selectedDate);
   }, [selectedDate]);
 
-  // Get filtered users
+  // Get filtered users - need to fetch labours separately
   const leaders = users.filter(user => user.role === 'leader');
-  const labours = users.filter(user => user.role === 'labour');
+  // labours will be fetched separately from Labour model in useEffect
 
   // Helper function to get active leaders count from tasks
   const getActiveLeadersCount = () => {
@@ -760,6 +780,7 @@ const DailyTaskAllocationDashboard = () => {
             <BulkTaskCreationForm
               isOpen={showTaskModal && !editingTask}
               users={users}
+              labours={labours}
               onTasksCreated={handleTasksCreated}
               onCancel={() => setShowTaskModal(false)}
             />

@@ -11,6 +11,9 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const year = parseInt(searchParams.get('year'));
     const month = parseInt(searchParams.get('month'));
+    const department = searchParams.get('department'); // Department filter parameter
+    const role = searchParams.get('role'); // Role filter parameter
+    const leader = searchParams.get('leader'); // Leader filter parameter
 
     if (isNaN(year) || isNaN(month)) {
       return NextResponse.json({ success: false, error: 'Year and month are required.' }, { status: 400 });
@@ -19,8 +22,22 @@ export async function GET(request) {
     const startDate = new Date(year, month, 1);
     const endDate = new Date(year, month + 1, 0, 23, 59, 59);
 
-    // ⭐ වෙනස්කම: Leaders පමණක් fetch කරන්න
-    const users = await User.find({ role: 'leader' }, '_id name').lean();
+    // Build query for all users with optional filters
+    const userQuery = {};
+    
+    if (department && department !== 'all') {
+      userQuery.department = department;
+    }
+    
+    if (role && role !== 'all') {
+      userQuery.role = role;
+    }
+    
+    if (leader && leader !== 'all') {
+      userQuery._id = leader;
+    }
+
+    const users = await User.find(userQuery, '_id name department role').lean();
     
     // createdAt මற්றම් updatedAt ஐප் පெற, Attendance එකෙන් සියලුම fields ලබාගන්න
     const attendanceRecords = await Attendance.find({
@@ -47,6 +64,8 @@ export async function GET(request) {
       return {
         _id: user._id,
         name: user.name,
+        department: user.department,
+        role: user.role,
         attendance: userAttendance,
       };
     });

@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import connectMongoDB from "@/lib/mongodb";
 import TaskAllocation from "@/models/TaskAllocation";
+import Labour from "@/models/Labour"; // Import Labour model
 
 export async function POST(request) {
   try {
