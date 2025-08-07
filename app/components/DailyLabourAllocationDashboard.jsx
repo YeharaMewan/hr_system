@@ -190,19 +190,21 @@ const DailyLabourAllocationDashboard = () => {
           setTotalLabourCount(totalLabour);
         }
         
-        // Set company employees total if available
-        if (labourData.record.calculatedValues) {
-          setTotalCompanyEmployees(labourData.record.calculatedValues.totalCompanyEmployees || 0);
-        } else if (labourData.record.companyStats) {
-          // Fallback calculation from companyStats - use proper calculation
-          const codegenCount = labourData.record.companyStats[0]?.count || 0;
-          const ramCount = labourData.record.companyStats[1]?.count || 0;
-          const riseCount = labourData.record.companyStats[2]?.count || 0;
+        // ✅ FIXED: Set company employees total using CORRECT CALCULATION
+        if (labourData.record.calculatedValues && typeof labourData.record.calculatedValues.totalCompanyEmployees === 'number') {
+          setTotalCompanyEmployees(labourData.record.calculatedValues.totalCompanyEmployees);
+        } else {
+          // 🔧 FIXED: Use proper calculation instead of wrong fallback
+          const codegenCount = (labourData.record.companyStats && labourData.record.companyStats[0]) ? labourData.record.companyStats[0].count || 0 : 0;
+          const ramCount = (labourData.record.companyStats && labourData.record.companyStats[1]) ? labourData.record.companyStats[1].count || 0 : 0;
+          const riseCount = (labourData.record.companyStats && labourData.record.companyStats[2]) ? labourData.record.companyStats[2].count || 0 : 0;
           const workingLeaders = historicalLabourData.filter(leader => 
             ['Present', 'Work from home', 'Work from out of Rise'].includes(leader.attendanceStatus)
           ).length;
           const actualLabourCount = labourData.record.calculatedValues?.actualPresentLabourCount || 
                                   historicalLabourData.reduce((total, leader) => total + leader.labourCount, 0);
+          
+          // ✅ CORRECT FORMULA - මෙන්න නිවැරදි calculation එක:
           const theRiseTotalCalc = actualLabourCount + codegenCount + workingLeaders;
           const totalCompanyCalc = theRiseTotalCalc + ramCount + riseCount;
           setTotalCompanyEmployees(totalCompanyCalc);
@@ -214,57 +216,51 @@ const DailyLabourAllocationDashboard = () => {
         }
         
       } else if (tasksData.success && attendanceData.success) {
-        // If no saved labour allocation but we have live tasks and attendance data, 
-        // calculate labour allocation from current tasks
-        const leaders = attendanceData.leaders;
+        // If no saved labour allocation but we have live tasks and attendance data, calculate based on task allocations
+        let calculatedLabourData = [];
         
-        // Get actual labour attendance for the selected date
+        if (attendanceData.leaders && attendanceData.leaders.length > 0) {
+          calculatedLabourData = attendanceData.leaders.map(leader => {
+            // Find tasks assigned to this leader for the selected date
+            const leaderTasks = tasksData.success && tasksData.tasks 
+              ? tasksData.tasks.filter(task => 
+                  task.assignedLeader && 
+                  task.assignedLeader._id && 
+                  task.assignedLeader._id.toString() === leader._id.toString()
+                )
+              : [];
+            
+            const labourCount = leaderTasks.reduce((total, task) => 
+              total + (task.allocations ? task.allocations.length : 0), 0
+            );
+            
+            return {
+              id: leader._id,
+              name: leader.name,
+              email: leader.email,
+              labourCount: labourCount,
+              tasksCount: leaderTasks.length,
+              attendanceStatus: leader.attendanceStatus
+            };
+          });
+        }
+        
+        setLabourData(calculatedLabourData);
+        
+        // Get labour attendance for actual present labour count calculation
         const labourResponse = await fetch(`/api/users/labours?date=${date}`);
         const labourAttendanceData = await labourResponse.json();
         
-        const calculatedLabourData = leaders.map(leader => {
-          const leaderTasks = tasksData.tasks.filter(task => {
-            if (task.assignedLeader && task.assignedLeader._id) {
-              return task.assignedLeader._id === leader._id;
-            }
-            if (task.leader && task.leader._id) {
-              return task.leader._id === leader._id;
-            }
-            return task.assignedLeader === leader._id || task.leader === leader._id;
-          });
-          
-          // Calculate labour count based on task allocations
-          const totalLabours = leaderTasks.reduce((count, task) => {
-            if (task.allocations && Array.isArray(task.allocations)) {
-              return count + task.allocations.length;
-            }
-            return count;
-          }, 0);
-          
-          return {
-            id: leader._id,
-            name: leader.name,
-            email: leader.email,
-            labourCount: totalLabours,
-            tasksCount: leaderTasks.length,
-            attendanceStatus: leader.attendanceStatus || 'Not Marked'
-          };
-        });
-        
-        calculatedLabourData.sort((a, b) => a.name.localeCompare(b.name));
-        setLabourData(calculatedLabourData);
-        
-        // Use actual present labour count instead of calculated from task allocations
-        
         let actualPresentLabourCount = 0;
-        if (labourAttendanceData.success && typeof labourAttendanceData.presentLabourCount === 'number') {
-          actualPresentLabourCount = labourAttendanceData.presentLabourCount;
-          
-          // If no present labours but we have task allocations, use task allocation count
-          if (actualPresentLabourCount === 0) {
-            const taskAllocatedCount = calculatedLabourData.reduce((total, leader) => total + leader.labourCount, 0);
-            if (taskAllocatedCount > 0) {
-              actualPresentLabourCount = taskAllocatedCount;
+        const isToday = date === new Date().toISOString().split('T')[0];
+        
+        if (labourAttendanceData.success) {
+          if (typeof labourAttendanceData.presentLabourCount === 'number') {
+            actualPresentLabourCount = labourAttendanceData.presentLabourCount;
+          } else if (labourAttendanceData.labours) {
+            const presentCount = labourAttendanceData.labours.filter(labour => labour.isPresent).length;
+            if (presentCount > 0) {
+              actualPresentLabourCount = presentCount;
             } else if (isToday && labourAttendanceData.labours) {
               // For today, show total available labours if no attendance marked
               actualPresentLabourCount = labourAttendanceData.totalLabourCount || labourAttendanceData.labours.length;
@@ -289,7 +285,7 @@ const DailyLabourAllocationDashboard = () => {
         
         setTotalLabourCount(actualPresentLabourCount);
         
-        // Calculate total company employees based on actual present labour count
+        // ✅ FIXED: Calculate total company employees based on actual present labour count
         const codegenCount = companyStats[0]?.count || 0;
         const ramCount = companyStats[1]?.count || 0; 
         const riseCount = companyStats[2]?.count || 0;
@@ -297,7 +293,7 @@ const DailyLabourAllocationDashboard = () => {
           ['Present', 'Work from home', 'Work from out of Rise'].includes(leader.attendanceStatus)
         ).length;
         
-        // Use the calculated actual labour count
+        // ✅ CORRECT: Use the calculated actual labour count
         const theRiseTotalCalc = actualPresentLabourCount + codegenCount + workingLeaders;
         const totalCompanyCalc = theRiseTotalCalc + ramCount + riseCount;
         setTotalCompanyEmployees(totalCompanyCalc);
@@ -315,87 +311,31 @@ const DailyLabourAllocationDashboard = () => {
         }));
         
         setLabourData(basicLabourData);
-        setTotalLabourCount(0);
-        setTotalCompanyEmployees(0);
-        setCompanyStats([
-          { name: 'Codegen + Aigrow staff\'s', count: 0, editable: isToday },
-          { name: 'Ram studios', count: 0, editable: isToday },
-          { name: 'Rise Technology', count: 0, editable: isToday }
-        ]);
+        
+        const totalLabour = basicLabourData.reduce((total, leader) => total + leader.labourCount, 0);
+        const leaderLabourCount = basicLabourData.filter(leader => 
+          ['Present', 'Work from home', 'Work from out of Rise'].includes(leader.attendanceStatus)
+        );
+        
+        setTotalLabourCount(totalLabour);
+        
+        // ✅ FIXED: Calculate total company employees using correct formula
+        const codegenCount = companyStats[0]?.count || 0;
+        const ramCount = companyStats[1]?.count || 0;
+        const riseCount = companyStats[2]?.count || 0;
+        const workingLeaders = leaderLabourCount.length;
+        
+        const theRiseTotalCalc = totalLabour + codegenCount + workingLeaders;
+        const totalCompanyCalc = theRiseTotalCalc + ramCount + riseCount;
+        setTotalCompanyEmployees(totalCompanyCalc);
         
       } else {
-        
-        // Try multiple fallback approaches
-        let basicLabourData = [];
-        
-        // Approach 1: Try attendance leaders first
-        if (attendanceData.success && attendanceData.leaders && attendanceData.leaders.length > 0) {
-          basicLabourData = attendanceData.leaders.map(leader => ({
-            id: leader._id,
-            name: leader.name,
-            email: leader.email || 'N/A',
-            labourCount: 0,
-            tasksCount: 0,
-            attendanceStatus: leader.attendanceStatus || 'Not Marked'
-          }));
-        } else {
-          // Approach 2: Try leaders API
-          try {
-            const leadersResponse = await fetch('/api/users/leaders');
-            const leadersData = await leadersResponse.json();
-            
-            if (leadersData.success && leadersData.data && leadersData.data.length > 0) {
-              basicLabourData = leadersData.data.map(leader => ({
-                id: leader._id,
-                name: leader.name,
-                email: leader.email,
-                labourCount: 0,
-                tasksCount: 0,
-                attendanceStatus: 'Not Marked'
-              }));
-            }
-          } catch (apiError) {
-            // Silent error handling
-          }
-        }
-        
-        // Approach 3: Hardcoded fallback for testing
-        if (basicLabourData.length === 0) {
-          basicLabourData = [
-            {
-              id: 'test-leader-1',
-              name: 'Test Leader 1',
-              email: 'leader1@example.com',
-              labourCount: 0,
-              tasksCount: 0,
-              attendanceStatus: 'Not Marked'
-            },
-            {
-              id: 'test-leader-2', 
-              name: 'Test Leader 2',
-              email: 'leader2@example.com',
-              labourCount: 0,
-              tasksCount: 0,
-              attendanceStatus: 'Not Marked'
-            }
-          ];
-        }
-        
-        setLabourData(basicLabourData);
-        setTotalLabourCount(0);
-        setTotalCompanyEmployees(0);
-        setCompanyStats([
-          { name: 'Codegen + Aigrow staff\'s', count: 0, editable: isToday },
-          { name: 'Ram studios', count: 0, editable: isToday },
-          { name: 'Rise Technology', count: 0, editable: isToday }
-        ]);
-        
+        throw new Error(tasksData.message || attendanceData.message || 'Failed to fetch live data');
       }
     } catch (err) {
       throw err;
     }
   };
-
   // Load saved company stats from API for specific date
   const loadCompanyStats = async (date = null) => {
     try {
@@ -592,17 +532,6 @@ const DailyLabourAllocationDashboard = () => {
     const updatedStats = [...companyStats];
     updatedStats[index].count = parseInt(newCount) || 0;
     setCompanyStats(updatedStats);
-    
-    // Update total company employees when stats change - use correct calculation
-    // Total Company Employees = The Rise Total + Ram Studios + Rise Technology
-    const codegenCount = updatedStats[0]?.count || 0;
-    const ramCount = updatedStats[1]?.count || 0;
-    const riseCount = updatedStats[2]?.count || 0;
-    const theRiseTotalCalc = totalLabourCount + codegenCount + labourData.filter(leader => 
-      ['Present', 'Work from home', 'Work from out of Rise'].includes(leader.attendanceStatus)
-    ).length;
-    const totalCompanyCalc = theRiseTotalCalc + ramCount + riseCount;
-    setTotalCompanyEmployees(totalCompanyCalc);
   };
 
   // Handle editing company stats
@@ -639,19 +568,19 @@ const DailyLabourAllocationDashboard = () => {
 
   // Recalculate total company employees when stats change
   useEffect(() => {
-    if (isToday) {
-      // Use the correct calculation: The Rise Total + Ram Studios + Rise Technology
-      const codegenCount = companyStats[0]?.count || 0;
-      const ramCount = companyStats[1]?.count || 0;
-      const riseCount = companyStats[2]?.count || 0;
-      const workingLeaders = labourData.filter(leader => 
-        ['Present', 'Work from home', 'Work from out of Rise'].includes(leader.attendanceStatus)
-      ).length;
-      const theRiseTotalCalc = totalLabourCount + codegenCount + workingLeaders;
-      const totalCompanyCalc = theRiseTotalCalc + ramCount + riseCount;
-      setTotalCompanyEmployees(totalCompanyCalc);
-    }
-  }, [companyStats, totalLabourCount, labourData, isToday]);
+    // 🚨 REMOVE: if (isToday) condition
+    // Apply calculation for ALL dates, not just today
+    const codegenCount = companyStats[0]?.count || 0;
+    const ramCount = companyStats[1]?.count || 0;
+    const riseCount = companyStats[2]?.count || 0;
+    const workingLeaders = labourData.filter(leader => 
+      ['Present', 'Work from home', 'Work from out of Rise'].includes(leader.attendanceStatus)
+    ).length;
+    const theRiseTotalCalc = totalLabourCount + codegenCount + workingLeaders;
+    const totalCompanyCalc = theRiseTotalCalc + ramCount + riseCount;
+    setTotalCompanyEmployees(totalCompanyCalc);
+  }, [companyStats, totalLabourCount, labourData]);
+  
 
   if (loading) {
     return (
