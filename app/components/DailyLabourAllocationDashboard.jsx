@@ -70,8 +70,16 @@ const DailyLabourAllocationDashboard = () => {
       setLoading(true);
       setError(null);
 
-      // Always fetch data for the selected date - no special case for "today"
-      await fetchHistoricalLabourData(date);
+      // Check if the selected date is today
+      const today = new Date().toISOString().split('T')[0];
+      
+      if (date === today) {
+        // For today, fetch live data with task allocations
+        await fetchLiveLabourData(date);
+      } else {
+        // For historical dates, fetch saved data
+        await fetchHistoricalLabourData(date);
+      }
     } catch (err) {
       setError('Failed to load labour allocation data: ' + err.message);
     } finally {
@@ -80,14 +88,14 @@ const DailyLabourAllocationDashboard = () => {
   };
 
   // Fetch live labour data (today's data)
-  const fetchLiveLabourData = async () => {
+  const fetchLiveLabourData = async (date = selectedDate) => {
     try {
       // Fetch tasks with allocations for selected date
-      const tasksResponse = await fetch(`/api/tasks?date=${selectedDate}`);
+      const tasksResponse = await fetch(`/api/tasks?date=${date}`);
       const tasksData = await tasksResponse.json();
       
       // Get attendance data for leaders for selected date
-      const attendanceResponse = await fetch(`/api/attendance/daily?date=${selectedDate}`);
+      const attendanceResponse = await fetch(`/api/attendance/daily?date=${date}`);
       const attendanceData = await attendanceResponse.json();
       
       if (tasksData.success && attendanceData.success) {
@@ -125,13 +133,21 @@ const DailyLabourAllocationDashboard = () => {
         leaderLabourCount.sort((a, b) => a.name.localeCompare(b.name));
         setLabourData(leaderLabourCount);
         
-        // Calculate and set total labour count
-        const totalLabour = leaderLabourCount.reduce((total, leader) => total + leader.labourCount, 0);
-        setTotalLabourCount(totalLabour);
+        // ✅ UPDATED: Calculate total labour count from task allocations
+        // Sum up all labour counts allocated to each leader
+        const totalAllocatedLabours = leaderLabourCount.reduce((total, leader) => 
+          total + leader.labourCount, 0
+        );
+        
+        // Set the total labour count based on task allocations (not attendance)
+        setTotalLabourCount(totalAllocatedLabours);
         
         // Calculate total company employees based on current company stats
         const companyTotal = companyStats.reduce((total, stat) => total + stat.count, 0);
-        setTotalCompanyEmployees(totalLabour + companyTotal + leaderLabourCount.length);
+        const workingLeadersCount = leaderLabourCount.filter(leader => 
+          ['Present', 'Work from home', 'Work from out of Rise'].includes(leader.attendanceStatus)
+        ).length;
+        setTotalCompanyEmployees(totalAllocatedLabours + companyTotal + workingLeadersCount);
         
       } else {
         throw new Error(tasksData.message || attendanceData.message || 'Failed to fetch live data');
@@ -181,14 +197,10 @@ const DailyLabourAllocationDashboard = () => {
           setCompanyStats(labourData.record.companyStats);
         }
         
-        // Calculate totals - use actual present labour count if available
-        if (labourData.record.calculatedValues && labourData.record.calculatedValues.actualPresentLabourCount) {
-          setTotalLabourCount(labourData.record.calculatedValues.actualPresentLabourCount);
-        } else {
-          // Fallback to historical calculation
-          const totalLabour = historicalLabourData.reduce((total, leader) => total + leader.labourCount, 0);
-          setTotalLabourCount(totalLabour);
-        }
+        // ✅ UPDATED: Calculate totals from task allocations
+        // Use task-based allocation count, not attendance-based count
+        const totalAllocatedLabours = historicalLabourData.reduce((total, leader) => total + leader.labourCount, 0);
+        setTotalLabourCount(totalAllocatedLabours);
         
         // ✅ FIXED: Set company employees total using CORRECT CALCULATION
         if (labourData.record.calculatedValues && typeof labourData.record.calculatedValues.totalCompanyEmployees === 'number') {
@@ -201,11 +213,12 @@ const DailyLabourAllocationDashboard = () => {
           const workingLeaders = historicalLabourData.filter(leader => 
             ['Present', 'Work from home', 'Work from out of Rise'].includes(leader.attendanceStatus)
           ).length;
-          const actualLabourCount = labourData.record.calculatedValues?.actualPresentLabourCount || 
-                                  historicalLabourData.reduce((total, leader) => total + leader.labourCount, 0);
           
-          // ✅ CORRECT FORMULA - මෙන්න නිවැරදි calculation එක:
-          const theRiseTotalCalc = actualLabourCount + codegenCount + workingLeaders;
+          // ✅ UPDATED: Use task allocation based count
+          const totalAllocatedLabours = historicalLabourData.reduce((total, leader) => total + leader.labourCount, 0);
+          
+          // ✅ CORRECT FORMULA - task allocation based calculation:
+          const theRiseTotalCalc = totalAllocatedLabours + codegenCount + workingLeaders;
           const totalCompanyCalc = theRiseTotalCalc + ramCount + riseCount;
           setTotalCompanyEmployees(totalCompanyCalc);
         }
@@ -247,45 +260,15 @@ const DailyLabourAllocationDashboard = () => {
         
         setLabourData(calculatedLabourData);
         
-        // Get labour attendance for actual present labour count calculation
-        const labourResponse = await fetch(`/api/users/labours?date=${date}`);
-        const labourAttendanceData = await labourResponse.json();
+        // ✅ UPDATED: Calculate total from task allocations, not attendance
+        // Sum up all labour counts allocated to each leader
+        const totalAllocatedLabours = calculatedLabourData.reduce((total, leader) => 
+          total + leader.labourCount, 0
+        );
         
-        let actualPresentLabourCount = 0;
-        const isToday = date === new Date().toISOString().split('T')[0];
+        setTotalLabourCount(totalAllocatedLabours);
         
-        if (labourAttendanceData.success) {
-          if (typeof labourAttendanceData.presentLabourCount === 'number') {
-            actualPresentLabourCount = labourAttendanceData.presentLabourCount;
-          } else if (labourAttendanceData.labours) {
-            const presentCount = labourAttendanceData.labours.filter(labour => labour.isPresent).length;
-            if (presentCount > 0) {
-              actualPresentLabourCount = presentCount;
-            } else if (isToday && labourAttendanceData.labours) {
-              // For today, show total available labours if no attendance marked
-              actualPresentLabourCount = labourAttendanceData.totalLabourCount || labourAttendanceData.labours.length;
-            }
-          }
-        } else {
-          // Alternative: Calculate from labours array if available
-          if (labourAttendanceData.success && labourAttendanceData.labours) {
-            const presentCount = labourAttendanceData.labours.filter(labour => labour.isPresent).length;
-            if (presentCount > 0) {
-              actualPresentLabourCount = presentCount;
-            } else if (isToday) {
-              // For today, show total available labours
-              actualPresentLabourCount = labourAttendanceData.labours.length;
-            }
-          } else {
-            // Final fallback: calculate from leader task allocations
-            const totalLabour = calculatedLabourData.reduce((total, leader) => total + leader.labourCount, 0);
-            actualPresentLabourCount = totalLabour;
-          }
-        }
-        
-        setTotalLabourCount(actualPresentLabourCount);
-        
-        // ✅ FIXED: Calculate total company employees based on actual present labour count
+        // ✅ UPDATED: Calculate total company employees based on task allocation count
         const codegenCount = companyStats[0]?.count || 0;
         const ramCount = companyStats[1]?.count || 0; 
         const riseCount = companyStats[2]?.count || 0;
@@ -293,8 +276,8 @@ const DailyLabourAllocationDashboard = () => {
           ['Present', 'Work from home', 'Work from out of Rise'].includes(leader.attendanceStatus)
         ).length;
         
-        // ✅ CORRECT: Use the calculated actual labour count
-        const theRiseTotalCalc = actualPresentLabourCount + codegenCount + workingLeaders;
+        // ✅ CORRECT: Use the task allocation based labour count
+        const theRiseTotalCalc = totalAllocatedLabours + codegenCount + workingLeaders;
         const totalCompanyCalc = theRiseTotalCalc + ramCount + riseCount;
         setTotalCompanyEmployees(totalCompanyCalc);
         
@@ -312,20 +295,19 @@ const DailyLabourAllocationDashboard = () => {
         
         setLabourData(basicLabourData);
         
-        const totalLabour = basicLabourData.reduce((total, leader) => total + leader.labourCount, 0);
-        const leaderLabourCount = basicLabourData.filter(leader => 
-          ['Present', 'Work from home', 'Work from out of Rise'].includes(leader.attendanceStatus)
-        );
+        // ✅ UPDATED: Calculate from task allocations (will be 0 if no tasks)
+        const totalAllocatedLabours = basicLabourData.reduce((total, leader) => total + leader.labourCount, 0);
+        setTotalLabourCount(totalAllocatedLabours);
         
-        setTotalLabourCount(totalLabour);
-        
-        // ✅ FIXED: Calculate total company employees using correct formula
+        // ✅ UPDATED: Calculate total company employees using task allocation count
         const codegenCount = companyStats[0]?.count || 0;
         const ramCount = companyStats[1]?.count || 0;
         const riseCount = companyStats[2]?.count || 0;
-        const workingLeaders = leaderLabourCount.length;
+        const workingLeaders = basicLabourData.filter(leader => 
+          ['Present', 'Work from home', 'Work from out of Rise'].includes(leader.attendanceStatus)
+        ).length;
         
-        const theRiseTotalCalc = totalLabour + codegenCount + workingLeaders;
+        const theRiseTotalCalc = totalAllocatedLabours + codegenCount + workingLeaders;
         const totalCompanyCalc = theRiseTotalCalc + ramCount + riseCount;
         setTotalCompanyEmployees(totalCompanyCalc);
         
@@ -426,30 +408,21 @@ const DailyLabourAllocationDashboard = () => {
       const attendanceResponse = await fetch(`/api/attendance/daily?date=${today}`);
       const attendanceData = await attendanceResponse.json();
       
-      // Get actual labour attendance count
-      const labourResponse = await fetch(`/api/users/labours?date=${today}`);
-      const labourAttendanceData = await labourResponse.json();
-      
-      // Use actual present labour count instead of calculated
-      let actualPresentLabourCount = totalLabourCount; // default to current state
-      if (labourAttendanceData.success && typeof labourAttendanceData.presentLabourCount === 'number') {
-        actualPresentLabourCount = labourAttendanceData.presentLabourCount;
-      } else if (labourAttendanceData.success && labourAttendanceData.labours) {
-        actualPresentLabourCount = labourAttendanceData.labours.filter(labour => labour.isPresent).length;
-      }
+      // Get actual labour attendance count - remove this section since we don't need it anymore
+      // Now using task allocation based counting
       
       const dataToSave = {
         labourData: labourData,
         companyStats: companyStats,
         calculatedValues: {
-          totalLabourCount: actualPresentLabourCount, // Use actual present count
+          totalLabourCount: totalLabourCount, // Use task allocation based count
           theRiseTotalEmployees,
           totalCompanyEmployees: calculatedTotalCompanyEmployees,
           workingLeaderCount,
           codegenStaffCount,
           ramStudiosCount,
           riseTechnologyCount,
-          actualPresentLabourCount // Store the actual count separately too
+          actualAllocatedLabourCount: totalLabourCount // Store the task-based count
         },
         date: selectedDate,
         // Include attendance data for proper historical tracking
@@ -735,7 +708,7 @@ const DailyLabourAllocationDashboard = () => {
                 <TrendingUp className="w-6 h-6 text-blue-400" />
               </div>
               <div className="ml-4">
-                <p className="text-zinc-400 text-sm">Labour Allocation</p>
+                <p className="text-zinc-400 text-sm">Allocated Labours</p>
                 <p className="text-2xl font-bold text-white">{totalLabourCount}</p>
               </div>
             </div>
@@ -779,7 +752,7 @@ const DailyLabourAllocationDashboard = () => {
                 </h2>
                 <div className="bg-violet-600/20 px-3 py-1 rounded-full">
                   <span className="text-violet-400 text-sm font-medium">
-                    Total: {totalLabourCount}
+                    Allocated Labours: {totalLabourCount}
                   </span>
                 </div>
               </div>
@@ -844,10 +817,10 @@ const DailyLabourAllocationDashboard = () => {
                       </tr>
                     )}
                     
-                    {/* Total Row */}
+                    {/* Total Row - Show allocated labour count */}
                     <tr className="border-t-2 border-violet-600 bg-zinc-800/50">
                       <td className="py-4 px-4 font-bold text-violet-400">
-                        TOTAL LABOUR COUNT
+                        TOTAL ALLOCATED LABOURS
                       </td>
                       <td className="text-right py-4 px-4 font-bold text-2xl text-violet-400">
                         {totalLabourCount}
@@ -892,10 +865,10 @@ const DailyLabourAllocationDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {/* First row - TOTAL LABOUR COUNT */}
+                    {/* First row - TOTAL ALLOCATED LABOURS */}
                     <tr className="border-b border-zinc-700/50 bg-violet-900/20">
                       <td className="py-3 px-4 font-medium text-violet-400">
-                        TOTAL LABOUR COUNT
+                        TOTAL ALLOCATED LABOURS
                       </td>
                       <td className="text-right py-3 px-4 font-bold text-lg text-violet-400">
                         {totalLabourCount}
@@ -945,26 +918,48 @@ const DailyLabourAllocationDashboard = () => {
                       </td>
                       <td className="text-center py-3 px-4">
                         {!editingStats[0] ? (
-                          <button
-                            onClick={() => handleEditStat(0)}
-                            disabled={!isToday}
-                            className={`p-1 transition-colors ${
-                              isToday 
-                                ? 'text-blue-400 hover:text-blue-300' 
-                                : 'text-zinc-600 cursor-not-allowed'
-                            }`}
-                            title={isToday ? "Edit count" : "Historical data cannot be edited"}
-                          >
-                            <Settings className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => handleEditStat(0)}
+                              disabled={!isToday}
+                              className={`group relative inline-flex items-center px-3 py-2 text-sm font-medium rounded-lg border transition-all duration-200 ${
+                                isToday 
+                                  ? 'bg-blue-600/10 text-blue-400 border-blue-500/30 hover:bg-blue-600/20 hover:border-blue-400 hover:text-blue-300 hover:scale-105' 
+                                  : 'bg-zinc-700/50 text-zinc-500 border-zinc-600/50 cursor-not-allowed opacity-60'
+                              }`}
+                              title={isToday ? "Edit count" : "Historical data cannot be edited"}
+                            >
+                              <Settings className="w-4 h-4 mr-1.5" />
+                              Edit
+                              {isToday && (
+                                <div className="absolute inset-0 rounded-lg bg-blue-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                              )}
+                            </button>
+                          </div>
                         ) : (
-                          <button
-                            onClick={() => handleSaveStat(0)}
-                            className="text-green-400 hover:text-green-300 transition-colors p-1"
-                            title="Save"
-                          >
-                            ✓
-                          </button>
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => handleSaveStat(0)}
+                              className="group relative inline-flex items-center px-3 py-2 text-sm font-medium rounded-lg border bg-green-600/10 text-green-400 border-green-500/30 hover:bg-green-600/20 hover:border-green-400 hover:text-green-300 hover:scale-105 transition-all duration-200"
+                              title="Save changes"
+                            >
+                              <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                              </svg>
+                              Save
+                              <div className="absolute inset-0 rounded-lg bg-green-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                            </button>
+                            <button
+                              onClick={() => setEditingStats(prev => ({ ...prev, [0]: false }))}
+                              className="group relative inline-flex items-center px-2 py-2 text-sm font-medium rounded-lg border bg-red-600/10 text-red-400 border-red-500/30 hover:bg-red-600/20 hover:border-red-400 hover:text-red-300 hover:scale-105 transition-all duration-200"
+                              title="Cancel editing"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+                              </svg>
+                              <div className="absolute inset-0 rounded-lg bg-red-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -1017,26 +1012,48 @@ const DailyLabourAllocationDashboard = () => {
                           </td>
                           <td className="text-center py-3 px-4">
                             {!editingStats[actualIndex] ? (
-                              <button
-                                onClick={() => handleEditStat(actualIndex)}
-                                disabled={!isToday}
-                                className={`p-1 transition-colors ${
-                                  isToday 
-                                    ? 'text-blue-400 hover:text-blue-300' 
-                                    : 'text-zinc-600 cursor-not-allowed'
-                                }`}
-                                title={isToday ? "Edit count" : "Historical data cannot be edited"}
-                              >
-                                <Settings className="w-4 h-4" />
-                              </button>
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  onClick={() => handleEditStat(actualIndex)}
+                                  disabled={!isToday}
+                                  className={`group relative inline-flex items-center px-3 py-2 text-sm font-medium rounded-lg border transition-all duration-200 ${
+                                    isToday 
+                                      ? 'bg-blue-600/10 text-blue-400 border-blue-500/30 hover:bg-blue-600/20 hover:border-blue-400 hover:text-blue-300 hover:scale-105' 
+                                      : 'bg-zinc-700/50 text-zinc-500 border-zinc-600/50 cursor-not-allowed opacity-60'
+                                  }`}
+                                  title={isToday ? "Edit count" : "Historical data cannot be edited"}
+                                >
+                                  <Settings className="w-4 h-4 mr-1.5" />
+                                  Edit
+                                  {isToday && (
+                                    <div className="absolute inset-0 rounded-lg bg-blue-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                                  )}
+                                </button>
+                              </div>
                             ) : (
-                              <button
-                                onClick={() => handleSaveStat(actualIndex)}
-                                className="text-green-400 hover:text-green-300 transition-colors p-1"
-                                title="Save"
-                              >
-                                ✓
-                              </button>
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  onClick={() => handleSaveStat(actualIndex)}
+                                  className="group relative inline-flex items-center px-3 py-2 text-sm font-medium rounded-lg border bg-green-600/10 text-green-400 border-green-500/30 hover:bg-green-600/20 hover:border-green-400 hover:text-green-300 hover:scale-105 transition-all duration-200"
+                                  title="Save changes"
+                                >
+                                  <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                                  </svg>
+                                  Save
+                                  <div className="absolute inset-0 rounded-lg bg-green-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                                </button>
+                                <button
+                                  onClick={() => setEditingStats(prev => ({ ...prev, [actualIndex]: false }))}
+                                  className="group relative inline-flex items-center px-2 py-2 text-sm font-medium rounded-lg border bg-red-600/10 text-red-400 border-red-500/30 hover:bg-red-600/20 hover:border-red-400 hover:text-red-300 hover:scale-105 transition-all duration-200"
+                                  title="Cancel editing"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+                                  </svg>
+                                  <div className="absolute inset-0 rounded-lg bg-red-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
+                                </button>
+                              </div>
                             )}
                           </td>
                         </tr>

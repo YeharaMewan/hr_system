@@ -25,6 +25,8 @@ export const dynamic = 'force-dynamic';
 
 function DashboardPage() {
   const { data: session, status } = useSession();
+
+  // All hooks must be called before any conditional returns
   const [dashboardData, setDashboardData] = useState({
     totalUsers: 0,
     totalLabours: 0,
@@ -81,6 +83,30 @@ function DashboardPage() {
     triggerAutoSave,
     manualSave
   } = useAutoSave(autoSaveFunction, 3000); // 3 second delay
+
+  // Show loading state during authentication - moved after all hooks
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin w-8 h-8 border-4 border-violet-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-zinc-400">Loading Dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error if not authenticated
+  if (status === 'unauthenticated' || !session) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="flex flex-col items-center gap-4">
+          <AlertCircle className="w-8 h-8 text-red-500" />
+          <p className="text-zinc-400">Please log in to access the dashboard</p>
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
     // Only initialize once when session is authenticated and not already initialized
@@ -182,12 +208,38 @@ function DashboardPage() {
         fetch('/api/labour-allocation/company-stats')
       ]);
 
-      // Check response status
-      const dashboardStats = dashboardRes.ok ? await dashboardRes.json() : { data: {} };
-      const companyStats = companyStatsRes.ok ? await companyStatsRes.json() : { stats: [] };
+      console.log('📊 Dashboard API Response Status:', dashboardRes.status, dashboardRes.ok);
+      console.log('🏢 Company Stats API Response Status:', companyStatsRes.status, companyStatsRes.ok);
+
+      // Check response status and log errors
+      let dashboardStats = { data: {} };
+      let companyStats = { stats: [] };
+
+      if (dashboardRes.ok) {
+        dashboardStats = await dashboardRes.json();
+      } else {
+        console.error('❌ Dashboard stats API failed:', dashboardRes.status, dashboardRes.statusText);
+        const errorText = await dashboardRes.text();
+        console.error('❌ Error response:', errorText);
+      }
+
+      if (companyStatsRes.ok) {
+        companyStats = await companyStatsRes.json();
+      } else {
+        console.error('❌ Company stats API failed:', companyStatsRes.status, companyStatsRes.statusText);
+      }
+
+      console.log('📊 Dashboard Stats Data:', dashboardStats);
+      console.log('🏢 Company Stats Data:', companyStats);
 
       // Use data from the new dashboard stats endpoint
       const stats = dashboardStats.data || {};
+      
+      console.log('📈 Extracted Stats:', {
+        todayAttendance: stats.todayAttendance,
+        todayAttendanceBreakdown: stats.todayAttendanceBreakdown,
+        totalUsers: stats.totalUsers
+      });
       
       const newData = {
         totalUsers: stats.totalUsers || 0,
@@ -207,6 +259,11 @@ function DashboardPage() {
       };
 
       setDashboardData(newData);
+      
+      console.log('🎯 Final Dashboard Data Set:', {
+        todayAttendance: newData.todayAttendance,
+        todayAttendanceBreakdown: newData.todayAttendanceBreakdown
+      });
       
       // Initialize auto-save tracking with the fetched data
       initializeData(newData);
@@ -242,30 +299,6 @@ function DashboardPage() {
     }
   };
 
-  // Show loading state during authentication
-  if (status === 'loading') {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="flex flex-col items-center gap-4">
-          <RefreshCw className="w-8 h-8 text-violet-500 animate-spin" />
-          <p className="text-zinc-400">Loading dashboard...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Show error if not authenticated
-  if (status === 'unauthenticated' || !session) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="flex flex-col items-center gap-4">
-          <AlertCircle className="w-8 h-8 text-red-500" />
-          <p className="text-zinc-400">Please log in to access the dashboard</p>
-        </div>
-      </div>
-    );
-  }
-
   const StatCard = ({ title, value, icon: Icon, color, description, trend, breakdown, rate }) => (
     <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-6 hover:border-zinc-600 transition-colors">
       <div className="flex items-center justify-between">
@@ -278,7 +311,7 @@ function DashboardPage() {
               </div>
             ) : (
               <span className="flex items-baseline gap-2">
-                {value}
+                {value !== undefined && value !== null ? value : '0'}
                 {/* Remove percentage display for main attendance as requested */}
                 {rate !== undefined && title !== "Today's Total Attendance" && (
                   <span className="text-sm font-normal text-zinc-400">
@@ -295,36 +328,36 @@ function DashboardPage() {
             <div className="text-xs text-zinc-400 mt-2 space-y-1">
               <div className="flex justify-between">
                 <span>Working Leaders:</span>
-                <span className="text-yellow-500 font-semibold">{breakdown.leaders}</span>
+                <span className="text-yellow-500 font-semibold">{breakdown.leaders || 0}</span>
               </div>
-              {breakdown.labours > 0 && (
+              {(breakdown.labours || 0) > 0 && (
                 <div className="flex justify-between">
                   <span>Labour Count:</span>
-                  <span className="text-green-500 font-semibold">{breakdown.labours}</span>
+                  <span className="text-green-500 font-semibold">{breakdown.labours || 0}</span>
                 </div>
               )}
-              {breakdown.codegenAigrow > 0 && (
+              {(breakdown.codegenAigrow || 0) > 0 && (
                 <div className="flex justify-between">
                   <span>Codegen + Aigrow:</span>
-                  <span className="text-blue-500 font-semibold">{breakdown.codegenAigrow}</span>
+                  <span className="text-blue-500 font-semibold">{breakdown.codegenAigrow || 0}</span>
                 </div>
               )}
-              {breakdown.ramStudios > 0 && (
+              {(breakdown.ramStudios || 0) > 0 && (
                 <div className="flex justify-between">
                   <span>Ram Studios:</span>
-                  <span className="text-orange-500 font-semibold">{breakdown.ramStudios}</span>
+                  <span className="text-orange-500 font-semibold">{breakdown.ramStudios || 0}</span>
                 </div>
               )}
-              {breakdown.riseTechnology > 0 && (
+              {(breakdown.riseTechnology || 0) > 0 && (
                 <div className="flex justify-between">
                   <span>Rise Technology:</span>
-                  <span className="text-cyan-500 font-semibold">{breakdown.riseTechnology}</span>
+                  <span className="text-cyan-500 font-semibold">{breakdown.riseTechnology || 0}</span>
                 </div>
               )}
-              {breakdown.totalEmployees > 0 && (
+              {(breakdown.totalEmployees || 0) > 0 && (
                 <div className="flex justify-between border-t border-zinc-600 pt-1 mt-1">
                   <span className="font-medium">Total Today:</span>
-                  <span className="text-purple-400 font-bold">{breakdown.totalEmployees}</span>
+                  <span className="text-purple-400 font-bold">{breakdown.totalEmployees || 0}</span>
                 </div>
               )}
             </div>

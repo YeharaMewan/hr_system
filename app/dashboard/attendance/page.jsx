@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
+import { redirect } from 'next/navigation';
 import { PlusCircle, X, ChevronLeft, ChevronRight, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
@@ -49,6 +51,25 @@ function useAttendanceCalendar(initialDate) {
 // Main Component
 // =================================================================
 export default function InteractiveAttendance() {
+    const { data: session, status } = useSession();
+    
+    // Show loading while checking session
+    if (status === 'loading') {
+        return (
+            <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="animate-spin w-8 h-8 border-4 border-violet-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+                    <p className="text-zinc-400">Loading Attendance Dashboard...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Redirect if not authenticated
+    if (status === 'unauthenticated') {
+        redirect('/login');
+    }
+
     const [staff, setStaff] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [departments, setDepartments] = useState([]);
@@ -292,7 +313,12 @@ export default function InteractiveAttendance() {
         </div>
 
         {isLoading ? (
-          <div className="text-center p-10 flex-1 flex items-center justify-center">Loading...</div>
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <div className="animate-spin w-8 h-8 border-4 border-violet-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+              <p className="text-zinc-400">Loading attendance data...</p>
+            </div>
+          </div>
         ) : (
           sortedStaff.length > 0 ? (
             <div className="flex flex-col flex-1 min-h-0">

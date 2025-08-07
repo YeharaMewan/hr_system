@@ -18,9 +18,8 @@ export async function GET(request) {
 
     await connectMongoDB();
 
-    // Get unique departments from users with leader role
+    // Get unique departments from all users
     const departments = await User.distinct('department', { 
-      role: 'leader',
       department: { $exists: true, $ne: null, $ne: '' }
     });
 
