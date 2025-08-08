@@ -417,7 +417,7 @@ function DashboardPage() {
         </div>
       )}
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <StatCard
           title="Total Users"
           value={dashboardData.totalUsers}
@@ -439,15 +439,6 @@ function DashboardPage() {
           color="text-yellow-500"
           description="Leadership positions"
           rate={dashboardData.leaderAttendanceRate}
-        />
-        <StatCard
-          title="Today's Total Attendance"
-          value={dashboardData.todayAttendance}
-          icon={Calendar}
-          color="text-purple-500"
-          description="All employees present today"
-          breakdown={dashboardData.todayAttendanceBreakdown}
-          rate={null} // No percentage display
         />
       </div>
       {/* Secondary Stats */}

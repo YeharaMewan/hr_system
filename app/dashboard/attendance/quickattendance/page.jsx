@@ -1,30 +1,45 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
-import { redirect } from 'next/navigation';
+import { useSession, signIn } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import QuickAttendanceToday from '@/app/components/QuickAttendanceToday'; 
 
-export default function quickattendancePage() {
-    const { data: session, status } = useSession();
+// Loading State Component
+const LoadingState = () => (
+    <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <div className="text-center">
+            <div className="animate-spin w-8 h-8 border-4 border-violet-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+            <p className="text-zinc-400">Loading Quick Attendance...</p>
+        </div>
+    </div>
+);
 
-    // Show loading while checking session
-    if (status === 'loading') {
-        return (
-            <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-                <div className="text-center">
-                    <div className="animate-spin w-8 h-8 border-4 border-violet-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-                    <p className="text-zinc-400">Loading Quick Attendance...</p>
-                </div>
+// Unauthorized State Component
+const UnauthorizedState = ({ onSignIn }) => (
+    <div className="flex items-center justify-center min-h-screen">
+        <div className="flex flex-col items-center gap-4">
+            <div className="p-3 rounded-full bg-red-500/10">
+                <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                </svg>
             </div>
-        );
-    }
+            <p className="text-zinc-400">Please log in to access the quick attendance dashboard</p>
+            <button 
+                onClick={onSignIn}
+                className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors"
+            >
+                Sign In
+            </button>
+        </div>
+    </div>
+);
 
-    // Redirect if not authenticated
-    if (status === 'unauthenticated') {
-        redirect('/login');
-    }
-
+export default function quickattendancePage() {
+    const {  session, status } = useSession();
+    const router = useRouter();
+    
+    // --- සියලුම useState ඉහළින්, return කිරීමට පෙර ---
     const [staff, setStaff] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -33,6 +48,11 @@ export default function quickattendancePage() {
     const month = currentDate.getMonth();
 
     const fetchStaffAndAttendance = useCallback(async () => {
+        if (status !== 'authenticated' || !session) {
+            setIsLoading(false);
+            return;
+        }
+        
         setIsLoading(true);
         try {
             const res = await fetch(`/api/attendance?year=${year}&month=${month}`);
@@ -46,11 +66,13 @@ export default function quickattendancePage() {
             setStaff([]);
         }
         setIsLoading(false);
-    }, [year, month]);
+    }, [year, month, status, session]);
 
     useEffect(() => {
-        fetchStaffAndAttendance();
-    }, [fetchStaffAndAttendance]);
+        if (status === 'authenticated' && session) {
+            fetchStaffAndAttendance();
+        }
+    }, [fetchStaffAndAttendance, status, session]);
 
     // ✅ නිවැරදි කරන ලද සම්පූර්ණ ශ්‍රිතය
     const handleUpdateAttendance = async (userId, date, newStatus) => {
@@ -96,8 +118,7 @@ export default function quickattendancePage() {
                 setStaff(originalStaff);
                 throw new Error('Failed to update attendance');
             }
-            // সাර্থক নম্‌, নতুন fetch করার প্রয়োজন নেই। optimistic update এটি সঠিক।
-            // তবে প্রয়োজন হলে, response এর data দিয়ে state আবার update করা যেতে পারে।
+            // සාර්ථක යාවත්කාලීන කිරීම, optimistic update එක වලංගුයි
         } catch (error) {
             setStaff(originalStaff); // Revert on failure
         }
@@ -116,6 +137,15 @@ export default function quickattendancePage() {
             setStaff(originalStaff);
         }
     };
+
+    // Handle authentication states AFTER all hooks are declared
+    if (status === 'loading') {
+        return <LoadingState />;
+    }
+    
+    if (status === 'unauthenticated') {
+        return <UnauthorizedState onSignIn={() => signIn()} />;
+    }
 
     return (
         <div className="space-y-8">
