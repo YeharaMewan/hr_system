@@ -61,31 +61,64 @@ const DailyTaskAllocationDashboard = () => {
       setError(null);
 
       const today = new Date().toISOString().split('T')[0];
+      
       if (date === today) {
-        // Today's data - fetch tasks created today with date filter
+        // Today's data - load live data
+        console.log(`Loading live data for today: ${date}`);
         await loadAllData(date);
       } else {
-        // Historical data - fetch tasks for specific date and fallback to saved records if needed
-        await loadAllData(date);
+        // Historical data - try to get tasks for specific date first
+        console.log(`Loading historical data for: ${date}`);
+        const tasksData = await loadTasksData(date);
         
-        // If no tasks found for the date, try to get from saved records
-        if (tasks.length === 0) {
+        if (tasksData && tasksData.tasks && tasksData.tasks.length > 0) {
+          // Found tasks created on this date, load all data normally
+          console.log(`Found ${tasksData.tasks.length} tasks created on ${date}`);
+          setTasks(tasksData.tasks);
+          await Promise.all([loadUsers(), loadLabours()]);
+        } else {
+          // No tasks found for this date, try to get from saved allocation records
+          console.log(`No tasks found for ${date}, checking saved records...`);
           await fetchHistoricalTaskData(date);
         }
       }
     } catch (err) {
+      console.error('Error in fetchTaskDataForDate:', err);
       setError('Failed to load task allocation data: ' + err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // Load all live data (for today)
+  // Load all live data (for today or specific date)
   const loadAllData = async (date = null) => {
     try {
-      await Promise.all([loadTasks(date), loadUsers(), loadLabours()]);
+      console.log(`Loading all data for: ${date || 'current'}`);
+      const results = await Promise.all([loadTasks(date), loadUsers(), loadLabours()]);
+      console.log('All data loaded successfully');
+      return results;
     } catch (error) {
       console.error('Error loading live data:', error);
+      throw error;
+    }
+  };
+
+  // Load tasks data without setting state (for checking before fallback)
+  const loadTasksData = async (date = null) => {
+    try {
+      const url = date ? `/api/tasks?date=${date}` : '/api/tasks';
+      console.log(`Fetching tasks from: ${url}`);
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log(`API returned ${data.tasks ? data.tasks.length : 0} tasks`);
+        return data;
+      } else {
+        throw new Error(data.message);
+      }
+    } catch (error) {
+      console.error('Error loading tasks data:', error);
       throw error;
     }
   };
@@ -93,15 +126,9 @@ const DailyTaskAllocationDashboard = () => {
   // Load tasks with allocated labours (filtered by date if historical)
   const loadTasks = async (date = null) => {
     try {
-      const url = date ? `/api/tasks?date=${date}` : '/api/tasks';
-      const response = await fetch(url);
-      const data = await response.json();
-      
-      if (data.success) {
-        setTasks(data.tasks);
-      } else {
-        throw new Error(data.message);
-      }
+      const data = await loadTasksData(date);
+      setTasks(data.tasks);
+      return data;
     } catch (error) {
       console.error('Error loading tasks:', error);
       throw error;
@@ -147,10 +174,13 @@ const DailyTaskAllocationDashboard = () => {
   // Fetch historical task data
   const fetchHistoricalTaskData = async (date) => {
     try {
+      console.log(`Fetching historical task data for: ${date}`);
       const response = await fetch(`/api/task-allocations/daily?date=${date}`);
       const data = await response.json();
       
-      if (data.success && data.record && data.record.taskAllocations) {
+      if (data.success && data.record && data.record.taskAllocations && data.record.taskAllocations.length > 0) {
+        console.log(`Found ${data.record.taskAllocations.length} saved task allocations for ${date}`);
+        
         // Convert historical data back to tasks format
         const historicalTasks = data.record.taskAllocations.map(taskAllocation => ({
           _id: taskAllocation.taskId || taskAllocation._id,
@@ -184,8 +214,11 @@ const DailyTaskAllocationDashboard = () => {
         if (data.record.updatedAt) {
           setLastSaved(new Date(data.record.updatedAt));
         }
+        
+        console.log(`Successfully loaded ${historicalTasks.length} historical tasks`);
       } else {
         // No historical data found for this date
+        console.log(`No saved task allocation data found for ${date}`);
         setTasks([]);
         setUsers([]);
         setLastSaved(null);
@@ -652,12 +685,15 @@ const DailyTaskAllocationDashboard = () => {
                       <div className="text-zinc-400">
                         <Calendar className="w-12 h-12 mx-auto mb-4 text-zinc-600" />
                         <p className="text-lg font-medium mb-2">
-                          {isToday ? 'No tasks found for today' : `No tasks created on ${new Date(selectedDate).toLocaleDateString()}`}
+                          {isToday 
+                            ? 'No tasks found for today' 
+                            : `No data found for ${new Date(selectedDate).toLocaleDateString()}`
+                          }
                         </p>
                         <p className="text-sm">
                           {isToday 
                             ? 'Create your first task to get started' 
-                            : 'No tasks were created on this date. Try selecting a different date or create new tasks for today.'
+                            : 'No tasks were created on this date and no saved allocation records were found. Try selecting a different date or create new tasks for today.'
                           }
                         </p>
                       </div>
