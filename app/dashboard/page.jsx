@@ -83,6 +83,80 @@ function DashboardPage() {
     manualSave
   } = useAutoSave(autoSaveFunction, 3000); // 3 second delay
 
+  // All useEffect hooks must be called before any conditional returns
+  useEffect(() => {
+    // Only initialize once when session is authenticated and not already initialized
+    if (status === 'authenticated' && session && !isInitialized) {
+      setIsInitialized(true);
+      fetchDashboardData();
+      
+      // Setup change detection listener
+      const removeListener = dataChangeDetector.addListener((changes, newData) => {
+        triggerAutoSave(newData);
+      });
+      
+      // Setup periodic refresh (longer interval since we have event-driven saves)
+      const interval = setInterval(() => {
+        if (status === 'authenticated') { // Only refresh if still authenticated
+          fetchDashboardData();
+        }
+      }, 600000); // 10 minutes
+      
+      setAutoRefreshInterval(interval);
+      
+      // Cleanup function for this effect
+      return () => {
+        if (interval) {
+          clearInterval(interval);
+        }
+        removeListener();
+      };
+    }
+    
+    // Handle unauthenticated state
+    if (status === 'unauthenticated') {
+      setIsInitialized(false);
+      setDashboardData({
+        totalUsers: 0,
+        totalLabours: 0,
+        totalLeaders: 0,
+        todayAttendance: 0,
+        todayAttendanceBreakdown: { leaders: 0, labours: 0 },
+        activeTasks: 0,
+        completedTasks: 0,
+        todayActiveTasks: 0,
+        todayCompletedTasks: 0,
+        todayAllocatedTasks: 0,
+        pendingAllocations: 0,
+        companyStats: [],
+        attendanceRate: 0,
+        attendanceStatusBreakdown: {}
+      });
+      
+      // Clear any existing intervals
+      if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        setAutoRefreshInterval(null);
+      }
+    }
+  }, [status, session, isInitialized, triggerAutoSave, autoRefreshInterval]);
+
+  // Track changes when dashboard data updates
+  useEffect(() => {
+    if (dashboardData.totalUsers > 0 && status === 'authenticated') { // Only track when authenticated
+      const hasDataChanged = dataChangeDetector.checkForChanges(dashboardData);
+    }
+  }, [dashboardData, status]);
+
+  // Cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+      }
+    };
+  }, [autoRefreshInterval]);
+
   // Show loading state during authentication - moved after all hooks
   if (status === 'loading') {
     return (
@@ -191,12 +265,6 @@ function DashboardPage() {
     setError(null);
     try {
       
-      console.log('🔄 Fetching dashboard data...', { 
-        status, 
-        sessionUser: session.user?.name,
-        timestamp: new Date().toISOString()
-      });
-      
       // Fetch dashboard stats and company stats in parallel
       const [dashboardRes, companyStatsRes] = await Promise.all([
         fetch('/api/dashboard/stats'),
@@ -209,29 +277,18 @@ function DashboardPage() {
 
       if (dashboardRes.ok) {
         dashboardStats = await dashboardRes.json();
-        console.log('✅ Dashboard stats received:', dashboardStats);
       } else {
         const errorText = await dashboardRes.text();
-        console.error('❌ Dashboard stats error:', errorText);
       }
 
       if (companyStatsRes.ok) {
         companyStats = await companyStatsRes.json();
-        console.log('✅ Company stats received:', companyStats);
       } else {
         const errorText = await companyStatsRes.text();
-        console.error('❌ Company stats error:', errorText);
       }
 
       // Use data from the new dashboard stats endpoint
       const stats = dashboardStats.data || {};
-      
-      console.log('📊 Processing stats:', {
-        todayAttendance: stats.todayAttendance,
-        totalUsers: stats.totalUsers,
-        hasData: Object.keys(stats).length > 0,
-        debugInfo: stats.debug
-      });
       
       const newData = {
         totalUsers: stats.totalUsers || 0,
@@ -250,16 +307,12 @@ function DashboardPage() {
         attendanceStatusBreakdown: stats.attendanceStatusBreakdown || {}
       };
 
-      console.log('📈 Final dashboard data:', newData);
-      
       setDashboardData(newData);
       
       // Initialize auto-save tracking with the fetched data
       initializeData(newData);
 
     } catch (error) {
-      console.error('❌ Fetch dashboard data error:', error);
-      // Only log to console in development
       setError('Failed to load dashboard data. Please try refreshing.');
       // Show user-friendly error state
       setDashboardData({
