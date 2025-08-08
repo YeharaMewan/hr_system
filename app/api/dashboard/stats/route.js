@@ -24,129 +24,217 @@ export async function GET(request) {
 
     await connectMongoDB();
 
-    // Get today's date
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Get today's date with better handling
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endOfDay = new Date(today);
     endOfDay.setHours(23, 59, 59, 999);
 
-    // Fetch all data in parallel
-    const [allUsers, allLabours, leaders, todayAttendance, tasks, todayLabourAllocation, labourAttendance, todayTaskAllocations] = await Promise.all([
+    console.log('📅 Dashboard Stats - Date Range:', {
+      today: today.toISOString(),
+      endOfDay: endOfDay.toISOString(),
+      todayLocal: today.toLocaleDateString()
+    });
+
+    // Fetch all data in parallel with better error handling
+    const [allUsers, allLabours, leaders, todayAttendance, tasks, todayLabourAllocation, todayTaskAllocations] = await Promise.all([
       // Get all users (leaders and employees only)
       User.find({ 
         isActive: { $ne: false }
-      }).select('_id name role').lean(),
+      }).select('_id name role').lean()
+        .catch(err => {
+          console.log('Error fetching users:', err.message);
+          return [];
+        }),
       
       // Get all labours
       Labour.find({ 
         isActive: { $ne: false }
-      }).select('_id name role').lean(),
+      }).select('_id name role').lean()
+        .catch(err => {
+          console.log('Error fetching labours:', err.message);
+          return [];
+        }),
       
       // Get only leaders for attendance overview
       User.find({ 
         role: 'leader',
         isActive: { $ne: false }
-      }).select('_id name role').lean(),
+      }).select('_id name role').lean()
+        .catch(err => {
+          console.log('Error fetching leaders:', err.message);
+          return [];
+        }),
       
-      // Get today's attendance for leaders only
+      // Get today's attendance - ALL attendance records for today (Users + Labours)
       Attendance.find({
         date: { $gte: today, $lte: endOfDay }
-      }).populate('userId', 'role').select('userId status').lean(),
+      }).populate([
+        { path: 'userId', select: 'name role', model: 'User' }
+      ]).select('userId status date createdAt').lean()
+        .catch(err => {
+          console.log('Error fetching user attendance:', err.message);
+          return [];
+        }),
       
       // Get all tasks
-      Task.find({}).select('status').lean(),
+      Task.find({}).select('status').lean()
+        .catch(err => {
+          console.log('Error fetching tasks:', err.message);
+          return [];
+        }),
       
-      // Get today's labour allocation record to get total employee count
+      // Get today's labour allocation record
       LabourAllocationRecord.findOne({
         date: { $gte: today, $lte: endOfDay }
       }).select('totalLabourCount leaderAllocations companyStats calculatedValues').lean()
         .catch(err => {
-          return null; // Return null if there's an error
+          console.log('Error fetching labour allocation:', err.message);
+          return null;
         }),
-      
-      // Get actual labour attendance count for today
-      Labour.aggregate([
-        { $match: { isActive: { $ne: false } } },
-        { $lookup: {
-            from: 'attendances',
-            let: { userId: '$_id' },
-            pipeline: [
-              { $match: {
-                $expr: { $eq: ['$userId', '$$userId'] },
-                date: { $gte: today, $lte: endOfDay }
-              }},
-              { $project: { status: 1 } }
-            ],
-            as: 'attendance'
-          }
-        },
-        { $addFields: {
-          attendanceStatus: { $arrayElemAt: ['$attendance.status', 0] },
-          isPresent: {
-            $in: [
-              { $arrayElemAt: ['$attendance.status', 0] },
-              ['Present', 'Work from home', 'Work from out of Rise']
-            ]
-          }
-        }},
-        { $group: {
-          _id: null,
-          totalLabours: { $sum: 1 },
-          presentLabours: { $sum: { $cond: ['$isPresent', 1, 0] } }
-        }}
-      ]).then(result => result[0] || { totalLabours: 0, presentLabours: 0 })
-        .catch(err => ({ totalLabours: 0, presentLabours: 0 })),
 
       // Get today's task allocations
       TaskAllocationRecord.findOne({
         date: { $gte: today, $lte: endOfDay }
       }).select('taskAllocations summary').lean()
         .catch(err => {
-          return null; // Return null if there's an error
+          console.log('Error fetching task allocations:', err.message);
+          return null;
         })
     ]);
 
-    // Create attendance map for leaders only
-    const attendanceMap = {};
-    todayAttendance
-      .filter(att => att.userId && att.userId.role === 'leader') // Only include leaders
-      .forEach(att => {
-        attendanceMap[att.userId._id.toString()] = att.status;
+    // Additionally get labour attendance separately (since Labour uses different collection)
+    const todayLabourAttendance = await Attendance.find({
+      date: { $gte: today, $lte: endOfDay },
+      userId: { $in: allLabours.map(l => l._id) } // Only labour IDs
+    }).populate([
+      { path: 'userId', select: 'name role', model: 'Labour' }
+    ]).select('userId status date createdAt').lean()
+      .catch(err => {
+        console.log('Error fetching labour attendance:', err.message);
+        return [];
       });
+
+    // Combine both attendance arrays
+    const allTodayAttendance = [...todayAttendance, ...todayLabourAttendance];
+
+    console.log('📊 Data Fetched:', {
+      usersCount: allUsers.length,
+      laboursCount: allLabours.length,
+      leadersCount: leaders.length,
+      userAttendanceRecords: todayAttendance.length,
+      labourAttendanceRecords: todayLabourAttendance.length,
+      totalAttendanceRecords: allTodayAttendance.length,
+      tasksCount: tasks.length
+    });
+
+    // Create attendance maps
+    const leaderAttendanceMap = {};
+    const allAttendanceMap = {};
+    const labourAttendanceMap = {};
+    
+    // Process all attendance records
+    allTodayAttendance.forEach(att => {
+      if (att.userId) {
+        const userId = att.userId._id.toString();
+        allAttendanceMap[userId] = att.status;
+        
+        // Separate maps for leaders and labours
+        if (att.userId.role === 'leader') {
+          leaderAttendanceMap[userId] = att.status;
+        } else if (att.userId.role === 'labour') {
+          labourAttendanceMap[userId] = att.status;
+        }
+      }
+    });
+
+    console.log('📋 Attendance Maps:', {
+      totalAttendanceRecords: Object.keys(allAttendanceMap).length,
+      leaderAttendanceRecords: Object.keys(leaderAttendanceMap).length,
+      labourAttendanceRecords: Object.keys(labourAttendanceMap).length,
+      sampleAttendance: Object.entries(allAttendanceMap).slice(0, 3)
+    });
 
     // Calculate user statistics
     const totalUsers = allUsers.length + allLabours.length;
     const totalLabours = allLabours.length;
-    const totalLeaders = allUsers.filter(user => user.role === 'leader').length;
+    const totalLeaders = leaders.length;
     const totalEmployees = allUsers.filter(user => user.role === 'employee').length;
 
-    // Calculate attendance statistics for leaders (Present + Work from home + Work from out of Rise)
+    // Calculate attendance statistics - Include labour attendance
+    // Count all attendance records with "working" status
+    const workingStatuses = ['Present', 'Work from home', 'Work from out of Rise'];
+    
+    // Count working leaders
     const workingLeaders = leaders.filter(leader => {
-      const status = attendanceMap[leader._id.toString()];
-      return status === 'Present' || status === 'Work from home' || status === 'Work from out of Rise';
+      const status = leaderAttendanceMap[leader._id.toString()];
+      return workingStatuses.includes(status);
     });
     
+    // Count present leaders only
     const presentLeadersOnly = leaders.filter(leader => 
-      attendanceMap[leader._id.toString()] === 'Present'
+      leaderAttendanceMap[leader._id.toString()] === 'Present'
     );
     
-    const workingLeadersCount = workingLeaders.length;
-    const presentLeadersCount = presentLeadersOnly.length;
+    // Count working labours - Use LabourAllocationRecord data if available, otherwise use attendance records
+    let workingLaboursCount = 0;
+    let presentLaboursOnlyCount = 0;
     
-    // Get total employee count - start with 0 and only add if there's actual attendance
-    let totalEmployeesToday = 0;
-    let totalLabourCountToday = labourAttendance.presentLabours; // Use actual present labour count (will be 0 if none marked)
-    let totalCompanyEmployeesToday = 0;
+    if (todayLabourAllocation && todayLabourAllocation.totalLabourCount) {
+      // Use saved labour count from LabourAllocationRecord
+      workingLaboursCount = todayLabourAllocation.totalLabourCount || 0;
+      presentLaboursOnlyCount = todayLabourAllocation.calculatedValues?.actualPresentLabourCount || 0;
+      
+      console.log('📊 Using LabourAllocationRecord data for labour count:', {
+        totalLabourCount: workingLaboursCount,
+        actualPresentLabourCount: presentLaboursOnlyCount
+      });
+    } else {
+      // Fallback to attendance records if no LabourAllocationRecord
+      const workingLabours = allLabours.filter(labour => {
+        const status = labourAttendanceMap[labour._id.toString()];
+        return workingStatuses.includes(status);
+      });
+      
+      const presentLaboursOnly = allLabours.filter(labour => 
+        labourAttendanceMap[labour._id.toString()] === 'Present'
+      );
+      
+      workingLaboursCount = workingLabours.length;
+      presentLaboursOnlyCount = presentLaboursOnly.length;
+      
+      console.log('📊 Using attendance records fallback for labour count:', {
+        workingLaboursFromAttendance: workingLaboursCount,
+        presentLaboursFromAttendance: presentLaboursOnlyCount
+      });
+    }
+
+    // Get labour allocation data for company stats AND total labour count
+    let companyEmployeesCount = 0;
+    let allocatedLabourCount = 0; // Labour count from labour allocation
     let codegenAigrowCount = 0;
     let ramStudiosCount = 0;
     let riseTechnologyCount = 0;
     
-    // Only use saved data if we actually have attendance marked for today
-    if (todayLabourAllocation && (labourAttendance.presentLabours > 0 || workingLeadersCount > 0)) {
-      // Extract individual company stats only if we have real attendance data
-      if (todayLabourAllocation.companyStats && todayLabourAllocation.companyStats.length > 0) {
+    if (todayLabourAllocation) {
+      // Get allocated labour count from labour allocation record
+      allocatedLabourCount = todayLabourAllocation.totalLabourCount || 0;
+      
+      console.log('🔍 LabourAllocationRecord Details:', {
+        recordFound: true,
+        totalLabourCount: todayLabourAllocation.totalLabourCount,
+        allocatedLabourCount,
+        recordId: todayLabourAllocation._id,
+        hasCompanyStats: !!todayLabourAllocation.companyStats,
+        companyStatsLength: todayLabourAllocation.companyStats?.length || 0,
+        fullRecord: todayLabourAllocation
+      });
+      
+      // Get company stats
+      if (todayLabourAllocation.companyStats) {
         todayLabourAllocation.companyStats.forEach(company => {
-          if (company.name.toLowerCase().includes('codegen') || company.name.toLowerCase().includes('aigrow')) {
+          if (company.name.toLowerCase().includes('codegen') || 
+              company.name.toLowerCase().includes('aigrow')) {
             codegenAigrowCount = company.count || 0;
           } else if (company.name.toLowerCase().includes('ram studios')) {
             ramStudiosCount = company.count || 0;
@@ -154,23 +242,70 @@ export async function GET(request) {
             riseTechnologyCount = company.count || 0;
           }
         });
-        
-        totalCompanyEmployeesToday = codegenAigrowCount + ramStudiosCount + riseTechnologyCount;
+        companyEmployeesCount = codegenAigrowCount + ramStudiosCount + riseTechnologyCount;
       }
       
-      // Calculate final total attendance: Only count if we have actual attendance data
-      totalEmployeesToday = totalLabourCountToday + workingLeadersCount + totalCompanyEmployeesToday;
+      // If totalLabourCount is 0, try to get it from leaderAllocations
+      if (allocatedLabourCount === 0 && todayLabourAllocation.leaderAllocations) {
+        const calculatedLabourCount = todayLabourAllocation.leaderAllocations.reduce((total, leader) => 
+          total + (leader.labourCount || 0), 0
+        );
+        allocatedLabourCount = calculatedLabourCount;
+        
+        console.log('🔧 Using leaderAllocations fallback:', {
+          leaderAllocationsCount: todayLabourAllocation.leaderAllocations.length,
+          calculatedLabourCount,
+          leaderAllocations: todayLabourAllocation.leaderAllocations.map(l => ({
+            name: l.leaderName,
+            labourCount: l.labourCount
+          }))
+        });
+      }
+      
+      console.log('📊 Labour Allocation Data Found:', {
+        allocatedLabourCount,
+        companyEmployeesCount,
+        breakdown: {
+          codegen: codegenAigrowCount,
+          ramStudios: ramStudiosCount,
+          riseTech: riseTechnologyCount
+        }
+      });
     } else {
-      // No saved data and no current attendance - everything should be 0
-      totalEmployeesToday = workingLeadersCount; // Only count working leaders if any
+      console.log('⚠️ No LabourAllocationRecord found for today');
     }
     
-    // If no attendance marked at all, total should be 0
-    const finalTodayAttendance = (totalLabourCountToday === 0 && workingLeadersCount === 0) ? 0 : totalEmployeesToday;
+    // Calculate final total attendance - Include allocated labour count from labour allocation
+    const workingLeadersCount = workingLeaders.length;
+    const totalTodayAttendance = workingLeadersCount + workingLaboursCount + allocatedLabourCount + companyEmployeesCount;
 
-    // Calculate attendance rates (remove percentage display for main attendance)
+    console.log('📈 Final Attendance Calculation:', {
+      workingLeadersCount,
+      workingLaboursCount: workingLaboursCount,
+      allocatedLabourCount,
+      companyEmployeesCount,
+      totalTodayAttendance,
+      dataSource: todayLabourAllocation ? 'LabourAllocationRecord' : 'AttendanceRecords',
+      breakdown: {
+        leaders: workingLeadersCount,
+        attendanceLabours: workingLaboursCount,
+        allocatedLabours: allocatedLabourCount,
+        companyEmployees: companyEmployeesCount,
+        codegenAigrow: codegenAigrowCount,
+        ramStudios: ramStudiosCount,
+        riseTechnology: riseTechnologyCount
+      },
+      labourDetails: {
+        totalLaboursInDB: totalLabours,
+        workingLaboursToday: workingLaboursCount,
+        allocatedLaboursToday: allocatedLabourCount,
+        presentLaboursOnly: presentLaboursOnlyCount
+      }
+    });
+
+    // Calculate attendance rates
+    const presentLeadersCount = presentLeadersOnly.length;
     const leaderAttendanceRate = totalLeaders > 0 ? Math.round((presentLeadersCount / totalLeaders) * 100) : 0;
-    // No overall attendance rate calculation as requested
 
     // Calculate task statistics
     const activeTasks = tasks.filter(task => 
@@ -200,12 +335,21 @@ export async function GET(request) {
     allStatuses.forEach(status => {
       if (status === 'Not Marked') {
         attendanceStatusBreakdown[status] = leaders.filter(leader => 
-          !attendanceMap[leader._id.toString()]
+          !leaderAttendanceMap[leader._id.toString()]
         ).length;
       } else {
         attendanceStatusBreakdown[status] = leaders.filter(leader => 
-          attendanceMap[leader._id.toString()] === status
+          leaderAttendanceMap[leader._id.toString()] === status
         ).length;
+      }
+    });
+
+    console.log('📊 Final Stats:', {
+      todayAttendance: totalTodayAttendance,
+      breakdown: {
+        leaders: workingLeadersCount,
+        labours: workingLaboursCount,
+        companies: companyEmployeesCount
       }
     });
 
@@ -218,19 +362,21 @@ export async function GET(request) {
         totalEmployees,
         totalLeaders,
         
-        // Attendance statistics (Total Labour + Working Leaders + Company Employees)
-        todayAttendance: finalTodayAttendance,
+        // Attendance statistics - Now includes allocated labour count from labour allocation
+        todayAttendance: totalTodayAttendance,
         todayAttendanceBreakdown: {
-          leaders: workingLeadersCount, // Present + WFH + Work from out of Rise
-          presentLeadersOnly: presentLeadersCount, // Only Present leaders
-          labours: totalLabourCountToday,
-          totalEmployees: finalTodayAttendance, // Use consistent final count
-          companyEmployees: totalCompanyEmployeesToday,
+          leaders: workingLeadersCount,
+          presentLeadersOnly: presentLeadersOnly.length,
+          labours: workingLaboursCount,
+          allocatedLabours: allocatedLabourCount,
+          presentLaboursOnly: presentLaboursOnlyCount,
+          totalEmployees: totalTodayAttendance,
+          companyEmployees: companyEmployeesCount,
           codegenAigrow: codegenAigrowCount,
           ramStudios: ramStudiosCount,
           riseTechnology: riseTechnologyCount
         },
-        attendanceRate: null, // No percentage as requested
+        attendanceRate: null,
         leaderAttendanceRate,
         
         // Detailed attendance breakdown
@@ -246,7 +392,34 @@ export async function GET(request) {
         
         // Meta information
         date: today.toISOString().split('T')[0],
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        
+        // Debug info
+        debug: {
+          attendanceRecordsFound: allTodayAttendance.length,
+          userAttendanceRecords: todayAttendance.length,
+          labourAttendanceRecords: todayLabourAttendance.length,
+          totalLaboursInDB: totalLabours,
+          workingLaboursToday: workingLaboursCount,
+          allocatedLaboursToday: allocatedLabourCount,
+          labourDataSource: todayLabourAllocation ? 'LabourAllocationRecord' : 'AttendanceRecords',
+          labourAllocationRecord: todayLabourAllocation ? {
+            totalLabourCount: todayLabourAllocation.totalLabourCount,
+            actualPresentLabourCount: todayLabourAllocation.calculatedValues?.actualPresentLabourCount,
+            hasCompanyStats: !!todayLabourAllocation.companyStats
+          } : null,
+          attendanceCalculation: {
+            leaders: workingLeadersCount,
+            attendanceLabours: workingLaboursCount,
+            allocatedLabours: allocatedLabourCount,
+            companyEmployees: companyEmployeesCount,
+            total: totalTodayAttendance
+          },
+          dateRange: {
+            start: today.toISOString(),
+            end: endOfDay.toISOString()
+          }
+        }
       }
     });
 

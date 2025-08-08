@@ -191,6 +191,12 @@ function DashboardPage() {
     setError(null);
     try {
       
+      console.log('🔄 Fetching dashboard data...', { 
+        status, 
+        sessionUser: session.user?.name,
+        timestamp: new Date().toISOString()
+      });
+      
       // Fetch dashboard stats and company stats in parallel
       const [dashboardRes, companyStatsRes] = await Promise.all([
         fetch('/api/dashboard/stats'),
@@ -203,18 +209,29 @@ function DashboardPage() {
 
       if (dashboardRes.ok) {
         dashboardStats = await dashboardRes.json();
+        console.log('✅ Dashboard stats received:', dashboardStats);
       } else {
         const errorText = await dashboardRes.text();
+        console.error('❌ Dashboard stats error:', errorText);
       }
 
       if (companyStatsRes.ok) {
         companyStats = await companyStatsRes.json();
+        console.log('✅ Company stats received:', companyStats);
       } else {
-        // Handle error silently
+        const errorText = await companyStatsRes.text();
+        console.error('❌ Company stats error:', errorText);
       }
 
       // Use data from the new dashboard stats endpoint
       const stats = dashboardStats.data || {};
+      
+      console.log('📊 Processing stats:', {
+        todayAttendance: stats.todayAttendance,
+        totalUsers: stats.totalUsers,
+        hasData: Object.keys(stats).length > 0,
+        debugInfo: stats.debug
+      });
       
       const newData = {
         totalUsers: stats.totalUsers || 0,
@@ -233,12 +250,15 @@ function DashboardPage() {
         attendanceStatusBreakdown: stats.attendanceStatusBreakdown || {}
       };
 
+      console.log('📈 Final dashboard data:', newData);
+      
       setDashboardData(newData);
       
       // Initialize auto-save tracking with the fetched data
       initializeData(newData);
 
     } catch (error) {
+      console.error('❌ Fetch dashboard data error:', error);
       // Only log to console in development
       setError('Failed to load dashboard data. Please try refreshing.');
       // Show user-friendly error state
@@ -297,14 +317,20 @@ function DashboardPage() {
               </div>
               {(breakdown.labours || 0) > 0 && (
                 <div className="flex justify-between">
-                  <span>Labour Count:</span>
+                  <span>Attendance Labours:</span>
                   <span className="text-green-500 font-semibold">{breakdown.labours || 0}</span>
+                </div>
+              )}
+              {(breakdown.allocatedLabours || 0) > 0 && (
+                <div className="flex justify-between">
+                  <span>Allocated Labours:</span>
+                  <span className="text-blue-500 font-semibold">{breakdown.allocatedLabours || 0}</span>
                 </div>
               )}
               {(breakdown.codegenAigrow || 0) > 0 && (
                 <div className="flex justify-between">
                   <span>Codegen + Aigrow:</span>
-                  <span className="text-blue-500 font-semibold">{breakdown.codegenAigrow || 0}</span>
+                  <span className="text-purple-500 font-semibold">{breakdown.codegenAigrow || 0}</span>
                 </div>
               )}
               {(breakdown.ramStudios || 0) > 0 && (
