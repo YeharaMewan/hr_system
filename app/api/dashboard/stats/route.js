@@ -13,20 +13,16 @@ import TaskAllocationRecord from "@/models/TaskAllocationRecord";
 
 export async function GET(request) {
   try {
-    console.log('📊 Dashboard stats API called');
     const session = await getServerSession(authOptions);
     
     if (!session) {
-      console.log('❌ No session found');
       return NextResponse.json(
         { message: "Unauthorized access - authentication required" },
         { status: 401 }
       );
     }
 
-    console.log('✅ Session found:', session.user.name, session.user.role);
     await connectMongoDB();
-    console.log('✅ MongoDB connected');
 
     // Get today's date
     const today = new Date();
@@ -254,10 +250,7 @@ export async function GET(request) {
       }
     });
 
-    console.log('✅ Dashboard stats API response successful');
-
   } catch (error) {
-    console.error('❌ Dashboard stats API error:', error);
     return NextResponse.json(
       { 
         message: "Server error occurred",

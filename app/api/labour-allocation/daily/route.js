@@ -35,13 +35,6 @@ function getSriLankaDateRange(dateString) {
   const utcStartOfDay = new Date(startOfDay.getTime() - SRI_LANKA_OFFSET);
   const utcEndOfDay = new Date(endOfDay.getTime() - SRI_LANKA_OFFSET);
   
-  console.log('🇱🇰 Sri Lanka Date Range:');
-  console.log('   Local Start:', startOfDay.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
-  console.log('   Local End:', endOfDay.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
-  console.log('🌐 UTC Date Range for MongoDB:');
-  console.log('   UTC Start:', utcStartOfDay.toISOString());
-  console.log('   UTC End:', utcEndOfDay.toISOString());
-  
   return {
     startOfDay: utcStartOfDay,
     endOfDay: utcEndOfDay,
@@ -84,16 +77,6 @@ function getSriLankaDateRangeV2(dateString) {
   const utcStartOfDay = new Date(startOfDay.getTime() - offsetDifference);
   const utcEndOfDay = new Date(endOfDay.getTime() - offsetDifference);
   
-  console.log('📅 Date Processing:');
-  console.log('   Input date:', dateString || 'today');
-  console.log('   Target date:', targetDate.toISOString());
-  console.log('🇱🇰 Sri Lanka timezone (intended):');
-  console.log('   Start:', `${year}-${(month+1).toString().padStart(2,'0')}-${day.toString().padStart(2,'0')} 00:00:00`);
-  console.log('   End:', `${year}-${(month+1).toString().padStart(2,'0')}-${day.toString().padStart(2,'0')} 23:59:59`);
-  console.log('🌐 UTC range for MongoDB query:');
-  console.log('   UTC Start:', utcStartOfDay.toISOString());
-  console.log('   UTC End:', utcEndOfDay.toISOString());
-  
   return {
     startOfDay: utcStartOfDay,
     endOfDay: utcEndOfDay,
@@ -118,8 +101,6 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date');
 
-    console.log('📅 Requested date:', date);
-
     // ✅ Use Sri Lanka timezone-aware date range
     const { startOfDay, endOfDay, localDate } = getSriLankaDateRangeV2(date);
 
@@ -136,12 +117,6 @@ export async function GET(request) {
     .sort({ createdAt: -1 }) // Get latest record of the day
     .lean();
 
-    console.log('📋 Record found:', record ? 'Yes' : 'No');
-    if (record) {
-      console.log('   Record created at:', record.createdAt);
-      console.log('   Record date field:', record.date);
-    }
-
     return NextResponse.json({
       record: record,
       success: true,
@@ -156,7 +131,6 @@ export async function GET(request) {
     });
 
   } catch (error) {
-    console.error('❌ Labour allocation API error:', error);
     
     return NextResponse.json(
       { 
@@ -190,8 +164,6 @@ export async function POST(request) {
       attendanceData 
     } = body;
 
-    console.log('💾 Saving labour allocation data for date:', date);
-
     await connectMongoDB();
 
     const userId = session.user.id || session.user._id;
@@ -207,11 +179,6 @@ export async function POST(request) {
         $lte: endOfDay
       }
     });
-
-    console.log('🔍 Existing record check:');
-    console.log('   User ID:', userId);
-    console.log('   Date range:', startOfDay.toISOString(), 'to', endOfDay.toISOString());
-    console.log('   Found existing:', existingRecord ? 'Yes' : 'No');
 
     // ✅ Prepare record data with Sri Lanka date
     const targetDate = date ? new Date(date) : new Date();
@@ -241,8 +208,6 @@ export async function POST(request) {
     
     if (existingRecord) {
       // ✅ Update existing record
-      console.log('📝 Updating existing record:', existingRecord._id);
-      
       record = await LabourAllocationRecord.findByIdAndUpdate(
         existingRecord._id,
         recordData,
@@ -253,8 +218,6 @@ export async function POST(request) {
       );
     } else {
       // ✅ Create new record
-      console.log('🆕 Creating new record');
-      
       record = new LabourAllocationRecord({
         ...recordData,
         createdBy: userId
@@ -262,10 +225,6 @@ export async function POST(request) {
       
       await record.save();
     }
-
-    console.log('✅ Record saved successfully:', record._id);
-    console.log('   Created at:', record.createdAt);
-    console.log('   Date field:', record.date);
 
     return NextResponse.json({
       message: "Daily labour allocation saved successfully",
@@ -282,7 +241,6 @@ export async function POST(request) {
     });
 
   } catch (error) {
-    console.error('❌ Labour allocation save error:', error);
     
     return NextResponse.json(
       { 

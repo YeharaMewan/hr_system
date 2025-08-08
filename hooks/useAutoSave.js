@@ -22,7 +22,6 @@ export const useAutoSave = (saveFunction, delay = 2000) => {
     
     if (hasDataChanged && !hasChanges) {
       setHasChanges(true);
-      console.log('📝 Changes detected, scheduling auto-save...');
     }
     
     return hasDataChanged;
@@ -41,7 +40,6 @@ export const useAutoSave = (saveFunction, delay = 2000) => {
     timeoutRef.current = setTimeout(async () => {
       try {
         setIsSaving(true);
-        console.log('💾 Auto-saving changes...');
         
         await saveFunction(data);
         
@@ -49,10 +47,9 @@ export const useAutoSave = (saveFunction, delay = 2000) => {
         originalDataRef.current = JSON.stringify(data);
         setHasChanges(false);
         setLastSaved(new Date());
-        console.log('✅ Auto-save completed');
         
       } catch (error) {
-        console.error('❌ Auto-save failed:', error);
+        // Handle error silently or show toast
       } finally {
         setIsSaving(false);
       }
@@ -67,17 +64,14 @@ export const useAutoSave = (saveFunction, delay = 2000) => {
     
     try {
       setIsSaving(true);
-      console.log('💾 Manual save triggered...');
       
       await saveFunction(data);
       
       originalDataRef.current = JSON.stringify(data);
       setHasChanges(false);
       setLastSaved(new Date());
-      console.log('✅ Manual save completed');
       
     } catch (error) {
-      console.error('❌ Manual save failed:', error);
       throw error;
     } finally {
       setIsSaving(false);

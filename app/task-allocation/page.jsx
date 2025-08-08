@@ -79,7 +79,7 @@ export default function TaskAllocationPage() {
 
         await Promise.all([fetchUsers(), fetchTasks()]);
       } catch (error) {
-        console.error('Error fetching data:', error);
+        // Handle error silently
       } finally {
         setLoading(false);
       }

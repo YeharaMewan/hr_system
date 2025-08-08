@@ -43,7 +43,6 @@ export function getTimezoneAwareDateRange(dateString, timezone = 'Asia/Colombo')
     };
     
   } catch (error) {
-    console.error('❌ Timezone conversion error:', error);
     throw new Error(`Invalid date or timezone: ${error.message}`);
   }
 }

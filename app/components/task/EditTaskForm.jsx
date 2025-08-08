@@ -128,7 +128,7 @@ const EditTaskForm = ({
         throw new Error(data.message || 'Failed to update task');
       }
     } catch (error) {
-      console.error('Error updating task:', error);
+      // Error handled silently
       setErrors({ 
         submit: error.message || 'Failed to update task. Please try again.'
       });

@@ -29,14 +29,12 @@ export class DataChangeDetector {
     const changes = this.findChanges(this.lastSnapshot, currentData);
     
     if (changes.length > 0) {
-      console.log('🔍 Data changes detected:', changes);
-      
       // Notify all listeners
       this.listeners.forEach(callback => {
         try {
           callback(changes, currentData);
         } catch (error) {
-          console.error('Error in change listener:', error);
+          // Handle error silently
         }
       });
       

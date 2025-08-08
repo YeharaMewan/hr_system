@@ -29,7 +29,6 @@ export async function GET(request) {
     });
 
   } catch (error) {
-    console.error("Error fetching departments:", error);
     return NextResponse.json(
       { message: "Server error occurred" },
       { status: 500 }

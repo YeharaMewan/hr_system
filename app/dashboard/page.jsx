@@ -55,7 +55,6 @@ function DashboardPage() {
   const autoSaveFunction = async (data) => {
     // Check authentication before saving
     if (status !== 'authenticated' || !session) {
-      console.log('⏸️ Skipping auto-save - not authenticated');
       throw new Error('Not authenticated');
     }
 
@@ -111,13 +110,11 @@ function DashboardPage() {
   useEffect(() => {
     // Only initialize once when session is authenticated and not already initialized
     if (status === 'authenticated' && session && !isInitialized) {
-      console.log('🚀 Initializing dashboard for authenticated user:', session.user.name);
       setIsInitialized(true);
       fetchDashboardData();
       
       // Setup change detection listener
       const removeListener = dataChangeDetector.addListener((changes, newData) => {
-        console.log('📊 Dashboard data changed:', changes.length, 'changes detected');
         triggerAutoSave(newData);
       });
       
@@ -133,7 +130,6 @@ function DashboardPage() {
       // Cleanup function for this effect
       return () => {
         if (interval) {
-          console.log('🧹 Cleaning up dashboard intervals');
           clearInterval(interval);
         }
         removeListener();
@@ -142,7 +138,6 @@ function DashboardPage() {
     
     // Handle unauthenticated state
     if (status === 'unauthenticated') {
-      console.log('❌ User not authenticated, clearing dashboard data');
       setIsInitialized(false);
       setDashboardData({
         totalUsers: 0,
@@ -173,9 +168,6 @@ function DashboardPage() {
   useEffect(() => {
     if (dashboardData.totalUsers > 0 && status === 'authenticated') { // Only track when authenticated
       const hasDataChanged = dataChangeDetector.checkForChanges(dashboardData);
-      if (hasDataChanged) {
-        console.log('🔄 Triggering save due to data changes...');
-      }
     }
   }, [dashboardData, status]);
 
@@ -183,7 +175,6 @@ function DashboardPage() {
   useEffect(() => {
     return () => {
       if (autoRefreshInterval) {
-        console.log('🧹 Cleaning up dashboard on unmount');
         clearInterval(autoRefreshInterval);
       }
     };
@@ -192,7 +183,6 @@ function DashboardPage() {
   const fetchDashboardData = async () => {
     // Don't fetch if not authenticated
     if (status !== 'authenticated' || !session) {
-      console.log('⏸️ Skipping data fetch - not authenticated');
       setLoading(false);
       return;
     }
@@ -200,16 +190,12 @@ function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      console.log('📡 Fetching dashboard data...');
       
       // Fetch dashboard stats and company stats in parallel
       const [dashboardRes, companyStatsRes] = await Promise.all([
         fetch('/api/dashboard/stats'),
         fetch('/api/labour-allocation/company-stats')
       ]);
-
-      console.log('📊 Dashboard API Response Status:', dashboardRes.status, dashboardRes.ok);
-      console.log('🏢 Company Stats API Response Status:', companyStatsRes.status, companyStatsRes.ok);
 
       // Check response status and log errors
       let dashboardStats = { data: {} };
@@ -218,28 +204,17 @@ function DashboardPage() {
       if (dashboardRes.ok) {
         dashboardStats = await dashboardRes.json();
       } else {
-        console.error('❌ Dashboard stats API failed:', dashboardRes.status, dashboardRes.statusText);
         const errorText = await dashboardRes.text();
-        console.error('❌ Error response:', errorText);
       }
 
       if (companyStatsRes.ok) {
         companyStats = await companyStatsRes.json();
       } else {
-        console.error('❌ Company stats API failed:', companyStatsRes.status, companyStatsRes.statusText);
+        // Handle error silently
       }
-
-      console.log('📊 Dashboard Stats Data:', dashboardStats);
-      console.log('🏢 Company Stats Data:', companyStats);
 
       // Use data from the new dashboard stats endpoint
       const stats = dashboardStats.data || {};
-      
-      console.log('📈 Extracted Stats:', {
-        todayAttendance: stats.todayAttendance,
-        todayAttendanceBreakdown: stats.todayAttendanceBreakdown,
-        totalUsers: stats.totalUsers
-      });
       
       const newData = {
         totalUsers: stats.totalUsers || 0,
@@ -260,21 +235,11 @@ function DashboardPage() {
 
       setDashboardData(newData);
       
-      console.log('🎯 Final Dashboard Data Set:', {
-        todayAttendance: newData.todayAttendance,
-        todayAttendanceBreakdown: newData.todayAttendanceBreakdown
-      });
-      
       // Initialize auto-save tracking with the fetched data
       initializeData(newData);
-      
-      console.log('✅ Dashboard data loaded successfully');
 
     } catch (error) {
       // Only log to console in development
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Error fetching dashboard data:', error);
-      }
       setError('Failed to load dashboard data. Please try refreshing.');
       // Show user-friendly error state
       setDashboardData({

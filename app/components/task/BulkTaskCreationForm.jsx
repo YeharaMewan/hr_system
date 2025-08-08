@@ -385,7 +385,7 @@ const BulkTaskCreationForm = ({
         throw new Error(data.message || 'Failed to create tasks');
       }
     } catch (error) {
-      console.error('Error creating tasks:', error);
+      // Error handled silently
       setErrors({ 
         submit: error.message || 'Failed to create tasks. Please try again.'
       });

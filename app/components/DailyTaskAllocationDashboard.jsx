@@ -64,26 +64,21 @@ const DailyTaskAllocationDashboard = () => {
       
       if (date === today) {
         // Today's data - load live data
-        console.log(`Loading live data for today: ${date}`);
         await loadAllData(date);
       } else {
         // Historical data - try to get tasks for specific date first
-        console.log(`Loading historical data for: ${date}`);
         const tasksData = await loadTasksData(date);
         
         if (tasksData && tasksData.tasks && tasksData.tasks.length > 0) {
           // Found tasks created on this date, load all data normally
-          console.log(`Found ${tasksData.tasks.length} tasks created on ${date}`);
           setTasks(tasksData.tasks);
           await Promise.all([loadUsers(), loadLabours()]);
         } else {
           // No tasks found for this date, try to get from saved allocation records
-          console.log(`No tasks found for ${date}, checking saved records...`);
           await fetchHistoricalTaskData(date);
         }
       }
     } catch (err) {
-      console.error('Error in fetchTaskDataForDate:', err);
       setError('Failed to load task allocation data: ' + err.message);
     } finally {
       setLoading(false);
@@ -93,12 +88,9 @@ const DailyTaskAllocationDashboard = () => {
   // Load all live data (for today or specific date)
   const loadAllData = async (date = null) => {
     try {
-      console.log(`Loading all data for: ${date || 'current'}`);
       const results = await Promise.all([loadTasks(date), loadUsers(), loadLabours()]);
-      console.log('All data loaded successfully');
       return results;
     } catch (error) {
-      console.error('Error loading live data:', error);
       throw error;
     }
   };
@@ -107,18 +99,15 @@ const DailyTaskAllocationDashboard = () => {
   const loadTasksData = async (date = null) => {
     try {
       const url = date ? `/api/tasks?date=${date}` : '/api/tasks';
-      console.log(`Fetching tasks from: ${url}`);
       const response = await fetch(url);
       const data = await response.json();
       
       if (data.success) {
-        console.log(`API returned ${data.tasks ? data.tasks.length : 0} tasks`);
         return data;
       } else {
         throw new Error(data.message);
       }
     } catch (error) {
-      console.error('Error loading tasks data:', error);
       throw error;
     }
   };
@@ -130,7 +119,6 @@ const DailyTaskAllocationDashboard = () => {
       setTasks(data.tasks);
       return data;
     } catch (error) {
-      console.error('Error loading tasks:', error);
       throw error;
     }
   };
@@ -149,7 +137,6 @@ const DailyTaskAllocationDashboard = () => {
         throw new Error(data.message);
       }
     } catch (error) {
-      console.error('Error loading users:', error);
       throw error;
     }
   };
@@ -166,7 +153,6 @@ const DailyTaskAllocationDashboard = () => {
         throw new Error(data.message);
       }
     } catch (error) {
-      console.error('Error loading labours:', error);
       throw error;
     }
   };
@@ -174,12 +160,10 @@ const DailyTaskAllocationDashboard = () => {
   // Fetch historical task data
   const fetchHistoricalTaskData = async (date) => {
     try {
-      console.log(`Fetching historical task data for: ${date}`);
       const response = await fetch(`/api/task-allocations/daily?date=${date}`);
       const data = await response.json();
       
       if (data.success && data.record && data.record.taskAllocations && data.record.taskAllocations.length > 0) {
-        console.log(`Found ${data.record.taskAllocations.length} saved task allocations for ${date}`);
         
         // Convert historical data back to tasks format
         const historicalTasks = data.record.taskAllocations.map(taskAllocation => ({
@@ -215,16 +199,13 @@ const DailyTaskAllocationDashboard = () => {
           setLastSaved(new Date(data.record.updatedAt));
         }
         
-        console.log(`Successfully loaded ${historicalTasks.length} historical tasks`);
       } else {
         // No historical data found for this date
-        console.log(`No saved task allocation data found for ${date}`);
         setTasks([]);
         setUsers([]);
         setLastSaved(null);
       }
     } catch (err) {
-      console.error('Error fetching historical task data:', err);
       throw err;
     }
   };
@@ -275,7 +256,6 @@ const DailyTaskAllocationDashboard = () => {
         throw new Error('Failed to save daily data');
       }
     } catch (err) {
-      console.error('Error saving daily data:', err);
       showToast('❌ Failed to save daily data: ' + err.message, 'error');
     } finally {
       setSaving(false);
@@ -333,7 +313,6 @@ const DailyTaskAllocationDashboard = () => {
         throw new Error(data.message);
       }
     } catch (error) {
-      console.error('Error deleting task:', error);
       showToast('Failed to delete task: ' + error.message, 'error');
     }
   };
@@ -361,7 +340,6 @@ const DailyTaskAllocationDashboard = () => {
         throw new Error(data.message);
       }
     } catch (error) {
-      console.error('Error removing labour:', error);
       showToast('Failed to remove labour: ' + error.message, 'error');
     }
   };

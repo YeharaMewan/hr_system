@@ -129,7 +129,7 @@ const LabourAllocationForm = ({
         throw new Error(data.message || 'Failed to allocate labours');
       }
     } catch (error) {
-      console.error('Error allocating labours:', error);
+      // Error handled silently
       setErrors({ 
         submit: error.message || 'Failed to allocate labours. Please try again.'
       });

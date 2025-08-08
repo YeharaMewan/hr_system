@@ -108,7 +108,7 @@ export default function InteractiveAttendance() {
             const { data } = await res.json();
             setStaff(data || []); 
         } catch (error) {
-            console.error("Error fetching staff:", error);
+            // Error handled silently
             setStaff([]); 
         }
         setIsLoading(false);
@@ -137,7 +137,7 @@ export default function InteractiveAttendance() {
                     setRoles(data || []);
                 }
             } catch (error) {
-                console.error("Error fetching filter data:", error);
+                // Error handled silently
             }
         };
         fetchFiltersData();
@@ -178,7 +178,7 @@ export default function InteractiveAttendance() {
             if (!res.ok) throw new Error('Failed to update');
             // Optionally, re-fetch or update state with response from API for full consistency
         } catch (error) {
-            console.error(error);
+            // Error handled silently
             setStaff(originalStaff); // Rollback on failure
         }
     };
@@ -487,7 +487,7 @@ function SelectUserModal({ onClose, onAdd, currentStaffIds }) {
                     setRoles(data || []);
                 }
             } catch (error) {
-                console.error("Failed to fetch filter data", error);
+                // Error handled silently
             }
         };
         fetchFiltersData();
@@ -518,7 +518,7 @@ function SelectUserModal({ onClose, onAdd, currentStaffIds }) {
                     setSelectedUserId('');
                 }
             } catch (error) {
-                console.error("Failed to fetch users", error);
+                // Error handled silently
             }
             setIsLoading(false);
         };

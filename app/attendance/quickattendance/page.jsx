@@ -43,7 +43,7 @@ export default function quickattendancePage() {
             const { data } = await res.json();
             setStaff(data || []);
         } catch (error) {
-            console.error("Error fetching staff:", error);
+            // Error handled silently
             setStaff([]);
         }
         setIsLoading(false);
@@ -100,7 +100,7 @@ export default function quickattendancePage() {
             // සාර්ථක නම්, නැවත fetch කිරීමක් අවශ්‍ය නැත. optimistic update එක නිවැරදියි.
             // නමුත් අවශ්‍ය නම්, response එකෙන් ලැබෙන data වලින් state එක නැවත update කල හැක.
         } catch (error) {
-            console.error(error);
+            // Error handled silently
             setStaff(originalStaff); // Revert on failure
         }
     };
@@ -115,7 +115,7 @@ export default function quickattendancePage() {
             const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
             if (!res.ok) throw new Error('Failed to delete user');
         } catch (error) {
-            console.error(error);
+            // Error handled silently
             setStaff(originalStaff);
         }
     };

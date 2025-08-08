@@ -43,7 +43,6 @@ export default function quickattendancePage() {
             const { data } = await res.json();
             setStaff(data || []);
         } catch (error) {
-            console.error("Error fetching staff:", error);
             setStaff([]);
         }
         setIsLoading(false);
@@ -97,10 +96,9 @@ export default function quickattendancePage() {
                 setStaff(originalStaff);
                 throw new Error('Failed to update attendance');
             }
-            // සාර්ථක නම්, නැවත fetch කිරීමක් අවශ්‍ය නැත. optimistic update එක නිවැරදියි.
-            // නමුත් අවශ්‍ය නම්, response එකෙන් ලැබෙන data වලින් state එක නැවත update කල හැක.
+            // সাර্থক নম্‌, নতুন fetch করার প্রয়োজন নেই। optimistic update এটি সঠিক।
+            // তবে প্রয়োজন হলে, response এর data দিয়ে state আবার update করা যেতে পারে।
         } catch (error) {
-            console.error(error);
             setStaff(originalStaff); // Revert on failure
         }
     };
@@ -115,7 +113,6 @@ export default function quickattendancePage() {
             const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
             if (!res.ok) throw new Error('Failed to delete user');
         } catch (error) {
-            console.error(error);
             setStaff(originalStaff);
         }
     };

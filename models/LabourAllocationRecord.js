@@ -142,7 +142,6 @@ LabourAllocationRecordSchema.pre('save', async function(next) {
       });
       
       if (existing) {
-        console.log('⚠️ Record already exists for today, user:', this.createdBy);
         // Don't throw error, just log warning
         // throw new Error('Record already exists for today');
       }
@@ -150,7 +149,6 @@ LabourAllocationRecordSchema.pre('save', async function(next) {
     
     next();
   } catch (error) {
-    console.error('❌ Pre-save error:', error);
     next(error);
   }
 });
@@ -165,8 +163,6 @@ LabourAllocationRecordSchema.statics.getTodaysRecord = async function(userId) {
     const endOfDay = new Date(today);
     endOfDay.setHours(23, 59, 59, 999);
     
-    console.log('🔍 Looking for today\'s record for user:', userId);
-    
     let record = await this.findOne({
       createdBy: userId,
       createdAt: {
@@ -176,7 +172,6 @@ LabourAllocationRecordSchema.statics.getTodaysRecord = async function(userId) {
     }).sort({ createdAt: -1 });
     
     if (!record) {
-      console.log('🆕 Creating new record for user:', userId);
       
       record = new this({
         date: startOfDay,
@@ -194,11 +189,9 @@ LabourAllocationRecordSchema.statics.getTodaysRecord = async function(userId) {
       await record.save();
     }
     
-    console.log('✅ Record found/created:', record._id);
     return record;
     
   } catch (error) {
-    console.error('❌ getTodaysRecord error:', error);
     throw error;
   }
 };
@@ -213,8 +206,6 @@ LabourAllocationRecordSchema.statics.getRecordByDate = async function(dateString
     const endOfDay = new Date(targetDate);
     endOfDay.setHours(23, 59, 59, 999);
     
-    console.log('🔍 Looking for record on date:', dateString);
-    
     const record = await this.findOne({
       createdAt: {
         $gte: startOfDay,
@@ -225,11 +216,9 @@ LabourAllocationRecordSchema.statics.getRecordByDate = async function(dateString
     .populate('updatedBy', 'name email')
     .sort({ createdAt: -1 }); // Get latest record of that day
     
-    console.log('📋 Record found:', record ? 'Yes' : 'No');
     return record;
     
   } catch (error) {
-    console.error('❌ getRecordByDate error:', error);
     throw error;
   }
 };
