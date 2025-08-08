@@ -1,9 +1,8 @@
 'use client';
-
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
-import { redirect } from 'next/navigation';
-import { PlusCircle, X, ChevronLeft, ChevronRight, Zap } from 'lucide-react';
+import { useSession, signIn } from 'next-auth/react';
+import { useRouter, redirect } from 'next/navigation';
+import { PlusCircle, X, ChevronLeft, ChevronRight, Zap, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 
@@ -26,63 +25,90 @@ const statusColors = {
 
 function useAttendanceCalendar(initialDate) {
     const [currentDate, setCurrentDate] = useState(initialDate);
-
+    
     const dateInfo = useMemo(() => {
         const d = new Date(currentDate);
         const year = d.getFullYear();
         const month = d.getMonth(); // 0-11 for JS month
         const monthName = d.toLocaleString('default', { month: 'long' });
         const daysInMonth = new Date(year, month + 1, 0).getDate();
-        
         return { year, month, monthName, daysInMonth };
     }, [currentDate]);
-
+    
     const changeMonth = (direction) => {
         const newDate = new Date(currentDate);
         newDate.setMonth(newDate.getMonth() + direction);
         setCurrentDate(newDate);
     };
-
+    
     return { ...dateInfo, changeMonth };
 }
 
+// Loading State Component
+const LoadingState = () => (
+    <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <div className="text-center">
+            <div className="animate-spin w-8 h-8 border-4 border-violet-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+            <p className="text-zinc-400">Loading Attendance Dashboard...</p>
+        </div>
+    </div>
+);
+
+// Unauthorized State Component
+const UnauthorizedState = ({ onSignIn }) => (
+    <div className="flex items-center justify-center min-h-screen">
+        <div className="flex flex-col items-center gap-4">
+            <div className="p-3 rounded-full bg-red-500/10">
+                <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                </svg>
+            </div>
+            <p className="text-zinc-400">Please log in to access the attendance dashboard</p>
+            <button 
+                onClick={onSignIn}
+                className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors"
+            >
+                Sign In
+            </button>
+        </div>
+    </div>
+);
 
 // =================================================================
-// Main Component
+// Main Component - Fixed Hook Order
 // =================================================================
 export default function InteractiveAttendance() {
+    // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
     const { data: session, status } = useSession();
-    
-    // Show loading while checking session
-    if (status === 'loading') {
-        return (
-            <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-                <div className="text-center">
-                    <div className="animate-spin w-8 h-8 border-4 border-violet-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-                    <p className="text-zinc-400">Loading Attendance Dashboard...</p>
-                </div>
-            </div>
-        );
-    }
-
-    // Redirect if not authenticated
-    if (status === 'unauthenticated') {
-        redirect('/login');
-    }
-
+    const router = useRouter();
     const [staff, setStaff] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [departments, setDepartments] = useState([]);
     const [roles, setRoles] = useState([]);
     const [selectedDepartment, setSelectedDepartment] = useState('all');
     const [selectedRole, setSelectedRole] = useState('all');
-    
     const [editModal, setEditModal] = useState({ isOpen: false, cell: null });
     const [selectUserModal, setSelectUserModal] = useState(false);
-
+    
     const { year, month, monthName, daysInMonth, changeMonth } = useAttendanceCalendar(new Date());
-
+    
+    // Auto-refresh effect
+    useEffect(() => {
+        if (status === 'authenticated' && session) {
+            const interval = setInterval(() => {
+                fetchStaffAndAttendance();
+            }, 300000); // 5 minutes
+            
+            return () => clearInterval(interval);
+        }
+    }, [status, session]);
+    
     const fetchStaffAndAttendance = useCallback(async () => {
+        if (status !== 'authenticated' || !session) {
+            setIsLoading(false);
+            return;
+        }
+        
         setIsLoading(true);
         try {
             const params = new URLSearchParams({
@@ -105,6 +131,7 @@ export default function InteractiveAttendance() {
                 const errorData = await res.json();
                 throw new Error(errorData.error || 'Failed to fetch attendance data');
             }
+            
             const { data } = await res.json();
             setStaff(data || []); 
         } catch (error) {
@@ -112,14 +139,18 @@ export default function InteractiveAttendance() {
             setStaff([]); 
         }
         setIsLoading(false);
-    }, [year, month, selectedDepartment, selectedRole]);
-
+    }, [year, month, selectedDepartment, selectedRole, status, session]);
+    
     useEffect(() => {
-        fetchStaffAndAttendance();
-    }, [fetchStaffAndAttendance]);
-
+        if (status === 'authenticated' && session) {
+            fetchStaffAndAttendance();
+        }
+    }, [fetchStaffAndAttendance, status, session]);
+    
     // Fetch departments and roles on component mount
     useEffect(() => {
+        if (status !== 'authenticated' || !session) return;
+        
         const fetchFiltersData = async () => {
             try {
                 const [deptRes, rolesRes] = await Promise.all([
@@ -140,16 +171,17 @@ export default function InteractiveAttendance() {
                 // Error handled silently
             }
         };
+        
         fetchFiltersData();
-    }, []);
-
+    }, [status, session]);
+    
     const handleUpdateAttendance = async (newStatus, customUserId = null, customDate = null) => {
         const userId = customUserId || editModal.cell?.userId;
         const date = customDate || editModal.cell?.date;
         if (!userId || !date) return;
-
+        
         const originalStaff = JSON.parse(JSON.stringify(staff)); // Deep copy for reliable rollback
-
+        
         // නිවැරදි කිරීම: Local state එක update කිරීමේදී API structure එකට ගැලපෙන object එකක් යෙදීම
         const updatedStaffList = staff.map(s => {
             if (s._id === userId) {
@@ -166,23 +198,26 @@ export default function InteractiveAttendance() {
             }
             return s;
         });
+        
         setStaff(updatedStaffList);
         if (editModal.isOpen) setEditModal({ isOpen: false, cell: null });
-
+        
         try {
             const res = await fetch('/api/attendance', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ userId, date, status: newStatus }),
             });
+            
             if (!res.ok) throw new Error('Failed to update');
+            
             // Optionally, re-fetch or update state with response from API for full consistency
         } catch (error) {
             // Error handled silently
             setStaff(originalStaff); // Rollback on failure
         }
     };
-
+    
     const handleAddUserToSheet = (userId) => {
         if (!userId) return;
         
@@ -192,18 +227,22 @@ export default function InteractiveAttendance() {
         handleUpdateAttendance("Present", userId, todayDateString);
         setSelectUserModal(false);
     };
-
+    
     // නිවැරදි කිරීම: `record.status` ලෙස object එකේ property එකට access කිරීම
     const calculateWorkedDays = (attendance) => {
         if (!attendance) return 0;
+        
         return Object.values(attendance).filter(record => 
-            record.status === 'Present' || record.status === 'Work from home' || record.status === 'Work from out of Rise'
+            record.status === 'Present' || 
+            record.status === 'Work from home' || 
+            record.status === 'Work from out of Rise'
         ).length;
     };
-
+    
     // Role අනුව sort කරන function
     const sortStaffByRole = (staffList) => {
         const roleOrder = { 'hr': 1, 'leader': 2, 'employee': 3 };
+        
         return [...staffList].sort((a, b) => {
             const aOrder = roleOrder[a.role] || 999;
             const bOrder = roleOrder[b.role] || 999;
@@ -216,18 +255,18 @@ export default function InteractiveAttendance() {
             return aOrder - bOrder;
         });
     };
-
+    
     // Sorted staff list with group separators
     const sortedStaff = useMemo(() => {
         return sortStaffByRole(staff);
     }, [staff]);
-
+    
     // Function to check if current user is first in their role group
     const isFirstInRoleGroup = (currentUser, index, staffList) => {
         if (index === 0) return true;
         return staffList[index - 1].role !== currentUser.role;
     };
-
+    
     // Function to get role group name
     const getRoleGroupName = (role) => {
         const roleNames = {
@@ -238,8 +277,17 @@ export default function InteractiveAttendance() {
         return roleNames[role] || role;
     };
     
+    // Handle authentication states AFTER all hooks are declared
+    if (status === 'loading') {
+        return <LoadingState />;
+    }
+    
+    if (status === 'unauthenticated') {
+        return <UnauthorizedState onSignIn={() => signIn()} />;
+    }
+    
     return (
-      <div className="bg-zinc-900 border border-zinc-800 p-4 md:p-6 rounded-xl shadow-2xl text-white font-sans flex flex-col h-[calc(100vh-2rem)]">
+      <div className="bg-zinc-900 border border-zinc-700 p-4 md:p-6 rounded-xl shadow-2xl text-white font-sans flex flex-col h-[calc(100vh-2rem)]">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 flex-shrink-0">
             <div className="flex flex-col md:flex-row items-start md:items-center gap-4 md:gap-6">
                 <div>
@@ -250,7 +298,6 @@ export default function InteractiveAttendance() {
                         <button onClick={() => changeMonth(1)} className="p-1 rounded-md hover:bg-zinc-700"><ChevronRight size={20} /></button>
                     </div>
                 </div>
-                
                 {/* Filters Container */}
                 <div className="flex flex-col sm:flex-row gap-3 items-end">
                     {/* Department Filter Dropdown */}
@@ -268,7 +315,6 @@ export default function InteractiveAttendance() {
                             ))}
                         </select>
                     </div>
-
                     {/* Role Filter Dropdown */}
                     <div className="flex flex-col">
                         <label htmlFor="role-filter" className="text-sm font-medium text-zinc-400 mb-1">Role</label>
@@ -284,7 +330,6 @@ export default function InteractiveAttendance() {
                             ))}
                         </select>
                     </div>
-
                     {/* Reset Filters Button */}
                     {(selectedDepartment !== 'all' || selectedRole !== 'all') && (
                         <button
@@ -299,11 +344,10 @@ export default function InteractiveAttendance() {
                     )}
                 </div>
             </div>
-
             {/* ✅ 2. නිවැරදි කිරීම: Button දෙකම එකට පෙන්වීමට div එකක් යෙදීම */}
             <div className="flex items-center gap-3">
                 <Link 
-                    href="attendance/quickattendance" 
+                    href="/dashboard/attendance/quickattendance" 
                     className="flex items-center gap-2 bg-purple-700 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
                 >
                     <Zap size={18} />
@@ -311,7 +355,6 @@ export default function InteractiveAttendance() {
                 </Link>
             </div>
         </div>
-
         {isLoading ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
@@ -366,7 +409,6 @@ export default function InteractiveAttendance() {
                           <td className="sticky right-0 z-40 bg-zinc-800/95 backdrop-blur-sm p-3 border-l border-zinc-700 min-w-[80px]"></td>
                         </tr>
                       )}
-                      
                       {/* User Row */}
                       <tr className="border-t border-zinc-700 group hover:bg-zinc-800/30 transition-colors">
                         <td className="sticky left-0 z-10 bg-zinc-900 group-hover:bg-zinc-800/50 p-3 text-sm font-medium border-r border-zinc-700 text-left min-w-[200px]">
@@ -388,13 +430,10 @@ export default function InteractiveAttendance() {
                       {[...Array(daysInMonth)].map((_, i) => {
                         const day = i + 1;
                         const date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                        
                         // නිවැරදි කිරීම: status object එකෙන් status string එක ලබාගැනීම
                         const attendanceRecord = user.attendance?.[date];
                         const statusString = attendanceRecord?.status || '';
-                        
                         const colorClass = statusColors[statusString] || 'hover:bg-zinc-700';
-                        
                         return (
                           <td 
                             key={date} 
@@ -420,7 +459,6 @@ export default function InteractiveAttendance() {
                   </table>
                 </div>
               </div>
-              
               {/* Fixed Legend at bottom */}
               <div className="mt-4 border-t border-zinc-700 pt-4 flex-shrink-0 bg-zinc-900">
                 <h4 className="text-md font-semibold text-zinc-300 mb-3">Legend</h4>
@@ -441,7 +479,6 @@ export default function InteractiveAttendance() {
             </div>
           ) : <EmptyState onAdd={() => setSelectUserModal(true)} />
         )}
-
         <AnimatePresence>
           {editModal.isOpen && <EditAttendanceModal key="edit-modal" cell={editModal.cell} staffList={sortedStaff} onClose={() => setEditModal({ isOpen: false, cell: null })} onUpdate={handleUpdateAttendance} />}
           {selectUserModal && <SelectUserModal key="select-user-modal" onClose={() => setSelectUserModal(false)} onAdd={handleAddUserToSheet} currentStaffIds={sortedStaff.map(s => s._id)} />}
@@ -453,7 +490,6 @@ export default function InteractiveAttendance() {
 // =================================================================
 // Sub-Components
 // =================================================================
-
 const modalVariants = {
     hidden: { opacity: 0, scale: 0.95 },
     visible: { opacity: 1, scale: 1 },
@@ -468,7 +504,7 @@ function SelectUserModal({ onClose, onAdd, currentStaffIds }) {
     const [departments, setDepartments] = useState([]);
     const [roles, setRoles] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
-
+    
     useEffect(() => {
         const fetchFiltersData = async () => {
             try {
@@ -490,15 +526,17 @@ function SelectUserModal({ onClose, onAdd, currentStaffIds }) {
                 // Error handled silently
             }
         };
+        
         fetchFiltersData();
     }, []);
-
+    
     useEffect(() => {
         const fetchUsers = async () => {
             setIsLoading(true);
             try {
                 const res = await fetch('/api/users/all');
                 const { data } = await res.json();
+                
                 let filteredUsers = data.filter(user => !currentStaffIds.includes(user._id));
                 
                 // Filter by department if selected
@@ -512,6 +550,7 @@ function SelectUserModal({ onClose, onAdd, currentStaffIds }) {
                 }
                 
                 setAllUsers(filteredUsers);
+                
                 if (filteredUsers.length > 0) {
                     setSelectedUserId(filteredUsers[0]._id);
                 } else {
@@ -520,27 +559,39 @@ function SelectUserModal({ onClose, onAdd, currentStaffIds }) {
             } catch (error) {
                 // Error handled silently
             }
+            
             setIsLoading(false);
         };
+        
         fetchUsers();
     }, [currentStaffIds, selectedDepartment, selectedRole]);
-
+    
     const handleSubmit = (e) => {
         e.preventDefault();
         if (selectedUserId) {
             onAdd(selectedUserId);
         }
     };
-
+    
     return (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-            <motion.form onSubmit={handleSubmit} variants={modalVariants} initial="hidden" animate="visible" exit="exit" className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-full max-w-sm p-6">
+            <motion.form 
+                onSubmit={handleSubmit} 
+                variants={modalVariants} 
+                initial="hidden" 
+                animate="visible" 
+                exit="exit" 
+                className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-full max-w-sm p-6"
+            >
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="text-lg font-bold text-white">Add User to Attendance Sheet</h3>
                     <button type="button" onClick={onClose} className="text-zinc-400 hover:text-white"><X size={20} /></button>
                 </div>
+                
                 {isLoading ? (
-                    <p>Loading users...</p>
+                    <div className="flex items-center justify-center py-4">
+                        <Loader2 className="w-6 h-6 animate-spin text-violet-500" />
+                    </div>
                 ) : allUsers.length > 0 ? (
                     <div className="space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -573,6 +624,7 @@ function SelectUserModal({ onClose, onAdd, currentStaffIds }) {
                                 </select>
                             </div>
                         </div>
+                        
                         <div>
                             <label htmlFor="user-select" className="block text-sm font-medium text-zinc-400 mb-2">Select a User</label>
                             <select 
@@ -588,6 +640,7 @@ function SelectUserModal({ onClose, onAdd, currentStaffIds }) {
                                 ))}
                             </select>
                         </div>
+                        
                         <div className="flex justify-end gap-3 pt-4">
                             <button type="button" onClick={onClose} className="py-2 px-4 bg-zinc-700 hover:bg-zinc-600 rounded-lg font-semibold">Cancel</button>
                             <button type="submit" className="py-2 px-4 bg-violet-600 hover:bg-violet-700 rounded-lg font-semibold">Add to Sheet</button>
@@ -609,24 +662,38 @@ function SelectUserModal({ onClose, onAdd, currentStaffIds }) {
 
 function EditAttendanceModal({ cell, staffList, onClose, onUpdate }) {
     if (!cell) return null;
+    
     const staffMember = staffList.find(s => s._id === cell.userId);
     
     // නිවැරදි කිරීම: status object එකෙන් status string එක ලබාගැනීම
     const currentStatus = staffMember?.attendance?.[cell.date]?.status || "";
-
+    
     return (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-             <motion.div variants={modalVariants} initial="hidden" animate="visible" exit="exit" className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-full max-w-sm p-6">
+             <motion.div 
+                variants={modalVariants} 
+                initial="hidden" 
+                animate="visible" 
+                exit="exit" 
+                className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-full max-w-sm p-6"
+            >
                  <div className="flex justify-between items-center mb-4">
                      <h3 className="text-lg font-bold text-white">Update Attendance</h3>
                      <button onClick={onClose} className="text-zinc-400 hover:text-white"><X size={20} /></button>
                  </div>
+                 
                  <div className="space-y-4">
                      <p><span className="font-semibold text-zinc-400">Employee:</span> <span className="text-white">{staffMember?.name}</span></p>
                      <p><span className="font-semibold text-zinc-400">Date:</span> <span className="text-white">{new Date(cell.date).toLocaleDateString('en-CA')}</span></p>
+                     
                      <div>
                          <label htmlFor="status-select" className="block text-sm font-medium text-zinc-400 mb-2">Status</label>
-                         <select id="status-select" className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white focus:ring-2 focus:ring-violet-500 focus:border-violet-500" onChange={(e) => onUpdate(e.target.value)} defaultValue={currentStatus}>
+                         <select 
+                            id="status-select" 
+                            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white focus:ring-2 focus:ring-violet-500 focus:border-violet-500" 
+                            onChange={(e) => onUpdate(e.target.value)} 
+                            defaultValue={currentStatus}
+                        >
                              <option value="">- Select -</option>
                              {leaveTypes.map(type => <option key={type} value={type}>{type}</option>)}
                          </select>
@@ -643,7 +710,10 @@ function EmptyState({ onAdd }) {
             <div>
                 <h3 className="text-xl font-semibold text-white">No Users Found</h3>
                 <p className="text-zinc-400 mt-2 mb-6">Get started by adding your first user.</p>
-                <button onClick={onAdd} className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-violet-900/40 mx-auto">
+                <button 
+                    onClick={onAdd} 
+                    className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors shadow-lg shadow-violet-900/40 mx-auto"
+                >
                     <PlusCircle size={18} /> Add User
                 </button>
             </div>
