@@ -286,12 +286,6 @@ function DashboardPage() {
                   <span className="text-green-500 font-semibold">{breakdown.labours || 0}</span>
                 </div>
               )}
-              {(breakdown.allocatedLabours || 0) > 0 && (
-                <div className="flex justify-between">
-                  <span>Allocated Labours:</span>
-                  <span className="text-blue-500 font-semibold">{breakdown.allocatedLabours || 0}</span>
-                </div>
-              )}
               {(breakdown.codegenAigrow || 0) > 0 && (
                 <div className="flex justify-between">
                   <span>Codegen + Aigrow:</span>
