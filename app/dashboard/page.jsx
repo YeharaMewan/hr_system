@@ -18,6 +18,7 @@ import {
   PieChart,
   Clock
 } from 'lucide-react';
+
 // Force dynamic rendering to avoid hydration issues
 export const dynamic = 'force-dynamic';
 
@@ -194,11 +195,13 @@ function DashboardPage() {
         dashboardStats = await dashboardRes.json();
       } else {
         const errorText = await dashboardRes.text();
+        console.error('Dashboard stats fetch error:', errorText);
       }
       if (companyStatsRes.ok) {
         companyStats = await companyStatsRes.json();
       } else {
         const errorText = await companyStatsRes.text();
+        console.error('Company stats fetch error:', errorText);
       }
       // Use data from the new dashboard stats endpoint
       const stats = dashboardStats.data || {};
@@ -279,7 +282,7 @@ function DashboardPage() {
               </div>
               {(breakdown.labours || 0) > 0 && (
                 <div className="flex justify-between">
-                  <span>Attendance Labours:</span>
+                  <span>Working Labours:</span>
                   <span className="text-green-500 font-semibold">{breakdown.labours || 0}</span>
                 </div>
               )}
@@ -333,10 +336,6 @@ function DashboardPage() {
     const maxCount = Math.max(...stats.map(s => s.count || 0), 1); // Prevent division by zero
     return (
       <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-white font-semibold">Company Statistics</h3>
-          <BarChart3 className="w-5 h-5 text-zinc-400" />
-        </div>
         <div className="space-y-4">
           {stats.map((stat, index) => {
             const percentage = (stat.count / maxCount) * 100;
@@ -565,10 +564,6 @@ function DashboardPage() {
             </p>
           </div>
         </div>
-        {/* Company Statistics */}
-        {dashboardData.companyStats.length > 0 && (
-          <CompanyStatsCard stats={dashboardData.companyStats} />
-        )}
       </div>
     </div>
   );
